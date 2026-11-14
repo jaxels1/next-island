@@ -207,16 +207,86 @@
         <Style x:Key="DestinationLabel" TargetType="TextBlock">
             <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}"/>
         </Style>
+        <Style x:Key="SettingsChoice" TargetType="ComboBox">
+            <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="MinHeight" Value="29"/>
+            <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocus}"/>
+            <Setter Property="ItemContainerStyle">
+                <Setter.Value>
+                    <Style TargetType="ComboBoxItem">
+                        <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ComboBoxItem">
+                                    <Border x:Name="ItemSurface" Background="Transparent" Padding="8,6" CornerRadius="5">
+                                        <ContentPresenter />
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsHighlighted" Value="True">
+                                            <Setter TargetName="ItemSurface" Property="Background" Value="{StaticResource ControlHover}"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton Focusable="False" ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="ChoiceSurface" Background="{StaticResource ControlFill}" CornerRadius="8"/>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="ChoiceSurface" Property="Background" Value="{StaticResource ControlHover}"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <DockPanel Margin="9,0" IsHitTestVisible="False">
+                                <Path DockPanel.Dock="Right" Data="M0,0 L3,3 6,0" Stroke="{StaticResource Muted}"
+                                      StrokeThickness="1.3" StrokeLineJoin="Round" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                <ContentPresenter Content="{TemplateBinding SelectionBoxItem}"
+                                                  ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                                  VerticalAlignment="Center"/>
+                            </DockPanel>
+                            <Popup x:Name="PART_Popup" Placement="Bottom" AllowsTransparency="True"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}" Focusable="False">
+                                <Border Background="{StaticResource Recessed}" BorderBrush="{StaticResource IslandRim}"
+                                        BorderThickness="1" CornerRadius="8" Padding="4"
+                                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
+                                    <ScrollViewer MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value=".45"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <Style x:Key="ClipboardSwitch" TargetType="CheckBox">
             <Setter Property="Foreground" Value="{StaticResource Ink}"/>
             <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocus}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="CheckBox">
-                        <DockPanel Background="Transparent" MinHeight="34">
-                            <Border x:Name="SwitchTrack" Width="32" Height="18" CornerRadius="9" Margin="0,0,8,0"
+                        <DockPanel Background="Transparent" MinHeight="36" LastChildFill="True">
+                            <Border x:Name="SwitchTrack" DockPanel.Dock="Right" Width="34" Height="20" CornerRadius="10" Margin="12,0,0,0"
                                     VerticalAlignment="Center" Background="{StaticResource TrackFill}">
-                                <Ellipse x:Name="SwitchThumb" Width="12" Height="12" Margin="3"
+                                <Ellipse x:Name="SwitchThumb" Width="16" Height="16" Margin="2"
                                          HorizontalAlignment="Left" Fill="{StaticResource Ink}"/>
                             </Border>
                             <ContentPresenter VerticalAlignment="Center"/>
@@ -225,8 +295,9 @@
                             <Trigger Property="IsChecked" Value="True">
                                 <Setter TargetName="SwitchTrack" Property="Background" Value="{StaticResource Accent}"/>
                                 <Setter TargetName="SwitchThumb" Property="Fill" Value="{StaticResource IslandFill}"/>
-                                <Setter TargetName="SwitchThumb" Property="HorizontalAlignment" Value="Right"/>
+                                <Setter TargetName="SwitchThumb" Property="local:ButtonPress.OffsetX" Value="14"/>
                             </Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value=".45"/></Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -234,7 +305,7 @@
         </Style>
         <Style x:Key="Destination" TargetType="RadioButton">
             <Setter Property="Foreground" Value="{StaticResource Muted}"/>
-            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontSize" Value="12"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="MinHeight" Value="34"/>
             <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocus}"/>
@@ -242,7 +313,7 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="RadioButton">
                         <Grid Background="Transparent">
-                            <Border x:Name="Selection" CornerRadius="{StaticResource ControlRadius}" Margin="2,0"
+                            <Border x:Name="Selection" CornerRadius="9" Margin="3"
                                     Background="Transparent" IsHitTestVisible="False" local:ButtonPress.Scale=".96">
                                 <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
@@ -250,7 +321,7 @@
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Selection" Property="Background" Value="{StaticResource Recessed}"/></Trigger>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter Property="Foreground" Value="{StaticResource Accent}"/>
+                                <Setter Property="Foreground" Value="{StaticResource Ink}"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="Selection" Property="Background" Value="{StaticResource ControlPressed}"/>
@@ -299,10 +370,12 @@
     </UserControl.Resources>
 
     <StackPanel x:Name="PanelBody" Margin="{StaticResource PanelInsets}">
-        <Grid x:Name="Navigation" Margin="0,0,0,16" Height="34" SizeChanged="NavigationSizeChanged"
-              AutomationProperties.Name="Island views">
+        <Grid x:Name="NavigationHeader" Margin="0,0,0,16" Height="34">
+            <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <Grid x:Name="Navigation" SizeChanged="NavigationSizeChanged" AutomationProperties.Name="Island views">
+            <Border Background="{StaticResource NavigationFill}" CornerRadius="12" IsHitTestVisible="False"/>
             <Border x:Name="SelectionIndicator" HorizontalAlignment="Left" Background="{StaticResource ControlFill}"
-                    CornerRadius="11" IsHitTestVisible="False" Margin="2,0">
+                    CornerRadius="9" IsHitTestVisible="False" Margin="3">
                 <Border.RenderTransform><TranslateTransform x:Name="SelectionOffset"/></Border.RenderTransform>
             </Border>
             <UniformGrid Columns="4">
@@ -316,25 +389,32 @@
                 </RadioButton>
                 <RadioButton x:Name="ClipboardTab" Style="{StaticResource Destination}" GroupName="IslandView"
                              Tag="Clipboard" Checked="Navigate" AutomationProperties.Name="Clipboard">
-                    <StackPanel Orientation="Horizontal"><Path Style="{StaticResource DestinationIcon}" Data="{StaticResource ClipboardIcon}"/><TextBlock Style="{StaticResource DestinationLabel}" Text="Clipboard"/></StackPanel>
+                    <StackPanel Orientation="Horizontal"><Path x:Name="ClipboardTabIcon" Style="{StaticResource DestinationIcon}" Data="{StaticResource ClipboardIcon}"/><TextBlock Style="{StaticResource DestinationLabel}" Text="Clipboard"/></StackPanel>
                 </RadioButton>
                 <RadioButton x:Name="TimerTab" Style="{StaticResource Destination}" GroupName="IslandView"
                              Tag="Timer" Checked="Navigate" AutomationProperties.Name="Timer">
                     <StackPanel Orientation="Horizontal"><Path Style="{StaticResource DestinationIcon}" Data="{StaticResource TimerIcon}"/><TextBlock Style="{StaticResource DestinationLabel}" Text="Timer"/></StackPanel>
                 </RadioButton>
             </UniformGrid>
+            </Grid>
+            <Button x:Name="SettingsButton" Grid.Column="1" Width="32" Height="32" Margin="4,0,0,0" Padding="0"
+                    Background="Transparent" Style="{StaticResource Action}" Click="ToggleSettings"
+                    ToolTip="Settings" AutomationProperties.Name="Settings">
+                <Path Data="{StaticResource SettingsIcon}" Width="16" Height="16" Stretch="Uniform"
+                      Stroke="{StaticResource Muted}" StrokeThickness="1.3" StrokeLineJoin="Round"/>
+            </Button>
         </Grid>
-        <Grid x:Name="ViewHost" MinHeight="164">
+        <Grid x:Name="ViewHost" MinHeight="164" ClipToBounds="True">
         <StackPanel x:Name="MusicView" VerticalAlignment="Center">
             <Grid>
-                <Grid.ColumnDefinitions><ColumnDefinition Width="80"/><ColumnDefinition/></Grid.ColumnDefinitions>
-                <Border x:Name="ArtTile" Background="{StaticResource Recessed}" Width="64" Height="64" HorizontalAlignment="Left"
+                <Grid.ColumnDefinitions><ColumnDefinition Width="88"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                <Border x:Name="ArtTile" Background="{StaticResource Recessed}" Width="72" Height="72" HorizontalAlignment="Left"
                         VerticalAlignment="Center" CornerRadius="{StaticResource ArtworkRadius}" RenderTransformOrigin=".5,.5">
                     <Grid>
                         <Path Stroke="{StaticResource Muted}" StrokeThickness="1.5" StrokeLineJoin="Round"
                               StrokeStartLineCap="Round" StrokeEndLineCap="Round" Stretch="Uniform"
                               Width="22" Height="22" Data="{StaticResource MusicIcon}"/>
-                        <Rectangle x:Name="AlbumArt" RadiusX="10" RadiusY="10" Visibility="Collapsed"/>
+                        <Rectangle x:Name="AlbumArt" RadiusX="12" RadiusY="12" Visibility="Collapsed"/>
                     </Grid>
                 </Border>
                 <StackPanel x:Name="TrackDetails" Grid.Column="1" VerticalAlignment="Center" ClipToBounds="True">
@@ -344,18 +424,7 @@
                                Style="{StaticResource Quiet}" TextTrimming="CharacterEllipsis" Margin="0,4,0,0"/>
                 </StackPanel>
             </Grid>
-            <Grid x:Name="Timeline" Margin="0,12,0,0" Visibility="Collapsed">
-                <Grid.RowDefinitions><RowDefinition Height="22"/><RowDefinition Height="18"/></Grid.RowDefinitions>
-                <Slider x:Name="Seek" Minimum="0" Maximum="1" VerticalAlignment="Center"
-                        Style="{StaticResource SeekTrack}" IsEnabled="False" IsMoveToPointEnabled="True"
-                        SmallChange="5" LargeChange="15" ValueChanged="SeekChanged"
-                        PreviewMouseLeftButtonUp="FinishSeek" AutomationProperties.Name="Playback position"/>
-                <TextBlock x:Name="Elapsed" Grid.Row="1" Style="{StaticResource Quiet}" FontSize="11"
-                           Typography.NumeralAlignment="Tabular"/>
-                <TextBlock x:Name="Duration" Grid.Row="1" Style="{StaticResource Quiet}" FontSize="11" HorizontalAlignment="Right"
-                           Typography.NumeralAlignment="Tabular"/>
-            </Grid>
-            <StackPanel x:Name="Transport" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,4,0,0" Visibility="Collapsed">
+            <StackPanel x:Name="Transport" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,12,0,0" Visibility="Collapsed">
                 <Button x:Name="Previous" Style="{StaticResource TransportButton}" Click="PreviousTrack" ToolTip="Previous track"
                         AutomationProperties.Name="Previous track" IsEnabled="False">
                     <Path Style="{StaticResource PlaybackIcon}" Data="{StaticResource PreviousSolid}"/>
@@ -372,6 +441,17 @@
                     <Path Style="{StaticResource PlaybackIcon}" Data="{StaticResource NextSolid}"/>
                 </Button>
             </StackPanel>
+            <Grid x:Name="Timeline" Margin="0,6,0,0" Visibility="Collapsed">
+                <Grid.RowDefinitions><RowDefinition Height="22"/><RowDefinition Height="18"/></Grid.RowDefinitions>
+                <Slider x:Name="Seek" Minimum="0" Maximum="1" VerticalAlignment="Center"
+                        Style="{StaticResource SeekTrack}" IsEnabled="False" IsMoveToPointEnabled="True"
+                        SmallChange="5" LargeChange="15" ValueChanged="SeekChanged"
+                        PreviewMouseLeftButtonUp="FinishSeek" AutomationProperties.Name="Playback position"/>
+                <TextBlock x:Name="Elapsed" Grid.Row="1" Style="{StaticResource Quiet}" FontSize="11"
+                           Typography.NumeralAlignment="Tabular"/>
+                <TextBlock x:Name="Duration" Grid.Row="1" Style="{StaticResource Quiet}" FontSize="11" HorizontalAlignment="Right"
+                           Typography.NumeralAlignment="Tabular"/>
+            </Grid>
             <TextBlock x:Name="MusicStatus" Margin="0,8,0,0" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite">
                 <TextBlock.Style><Style TargetType="TextBlock" BasedOn="{StaticResource Quiet}">
                     <Style.Triggers><Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed"/></Trigger></Style.Triggers>
@@ -443,6 +523,48 @@
                 <Button x:Name="TimerReset" Style="{StaticResource Action}" Background="Transparent" Content="Reset" Click="ResetTimer" Margin="6,0,0,0" IsEnabled="False"/>
             </StackPanel>
         </StackPanel>
+        <StackPanel x:Name="SettingsView" Visibility="Collapsed">
+            <TextBlock Text="Settings" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,8"/>
+            <ScrollViewer x:Name="SettingsOptions" MaxHeight="127" VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                <StackPanel Margin="0,0,8,0">
+                    <CheckBox x:Name="GraphSwitch" Style="{StaticResource ClipboardSwitch}" Content="Frame time graph"
+                              Click="ChangeGraphSetting"/>
+                    <CheckBox x:Name="LargeTextSwitch" Style="{StaticResource ClipboardSwitch}" Content="Larger HUD text"
+                              Click="ChangeTextSetting"/>
+                    <DockPanel Margin="0,6,0,4">
+                        <TextBlock Text="Island mode" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                        <ComboBox x:Name="DisplayChoice" Style="{StaticResource SettingsChoice}"
+                                  AutomationProperties.Name="Island mode" SelectionChanged="ChangeDisplayMode">
+                            <ComboBoxItem Content="Automatic island" Tag="Automatic"/>
+                            <ComboBoxItem Content="Pin game HUD" Tag="Always"/>
+                            <ComboBoxItem Content="Hide island" Tag="Hidden"/>
+                            <ComboBoxItem Content="Preview layout" Tag="Preview"/>
+                        </ComboBox>
+                    </DockPanel>
+                    <TextBlock x:Name="RuleAppName" Style="{StaticResource Quiet}" TextTrimming="CharacterEllipsis" Margin="0,6,0,4"/>
+                    <ComboBox x:Name="GameRuleChoice" Style="{StaticResource SettingsChoice}"
+                              AutomationProperties.Name="Game detection" SelectionChanged="ChangeGameRule">
+                        <ComboBoxItem Content="Use automatic game detection"/>
+                        <ComboBoxItem Content="Treat this app as a game"/>
+                        <ComboBoxItem Content="Never show the HUD for this app"/>
+                    </ComboBox>
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,4">
+                        <Button Style="{StaticResource Action}" Content="Choose PresentMon…" Click="ChooseFrameProvider"/>
+                        <Button x:Name="SensorSetupButton" Style="{StaticResource Action}" Content="Sensor setup…" Margin="6,0,0,0"
+                                Click="OpenSensors"/>
+                    </StackPanel>
+                    <TextBlock x:Name="ProviderStatus" Style="{StaticResource Quiet}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                </StackPanel>
+            </ScrollViewer>
+            <TextBlock x:Name="UpdateStatus" Style="{StaticResource Quiet}" TextWrapping="Wrap"
+                       Visibility="Collapsed" Margin="0,6,0,0" AutomationProperties.LiveSetting="Polite"/>
+            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                <Button x:Name="UpdateButton" Style="{StaticResource Action}" Content="Check for updates" Click="CheckForUpdates"/>
+                <Button x:Name="QuitButton" Style="{StaticResource Action}" Content="Quit app" Background="Transparent" Margin="6,0,0,0" Click="QuitApp"/>
+            </StackPanel>
+        </StackPanel>
+        <Canvas x:Name="ViewTransitionLayer" IsHitTestVisible="False" ClipToBounds="True"/>
         </Grid>
     </StackPanel>
 </UserControl>

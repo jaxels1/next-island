@@ -20,14 +20,14 @@ namespace SapphireGameHud;
 
 public partial class HudWindow : Window
 {
-    private enum DisplayMode { Automatic, Always, Hidden, Preview }
+    internal enum DisplayMode { Automatic, Always, Hidden, Preview }
     private enum IslandShape { Rest, Pill, Panel, Game, GameMusic }
 
     private const double CompactMinWidth = 176;
     private const double CompactMaxWidth = 280;
     private const double MaxGameWidth = 960;
     private const double WindowWidth = 1130;
-    private const double WindowHeight = 300;
+    private const double WindowHeight = 336;
     private const double PanelWidth = 384;
     private const double PillHeight = 38;
     private const double GameTrackWidth = 154;
@@ -85,6 +85,7 @@ public partial class HudWindow : Window
     private DisplayMode mode;
     private ForegroundWindow foreground;
     private ForegroundWindow pendingForeground;
+    private ForegroundWindow trackedGame;
     private ForegroundWindow lastApp;
     private ForegroundWindow ruleTarget;
     private long foregroundChangedAt;
@@ -176,7 +177,11 @@ public partial class HudWindow : Window
         timer.Tick += (_, _) => Tick();
         hoverTimer.Tick += (_, _) => UpdatePanelHover(Environment.TickCount64);
         CompactContent.Click += (_, _) => TogglePanel();
-        Deactivated += (_, _) => { if (panelPinned && panel?.HoldsOpen != true) DismissPanel(); };
+        PanelViewport.PreviewMouseDown += (_, _) =>
+        {
+            if (gameMusicOpen && !panelPinned) PinPanel(activate: true, focusControls: false);
+        };
+        Deactivated += (_, _) => { if (panelPinned && !choosingFile && panel?.HoldsOpen != true) DismissPanel(); };
         Island.AllowDrop = true;
         Island.DragOver += (_, e) =>
         {
@@ -262,8 +267,9 @@ public partial class HudWindow : Window
 
         var current = Desktop.ReadForeground(pendingForeground);
         if (current.ProcessId > 0) lastApp = current;
-        if (gameMusicOpen && IsActive && current.ProcessId == 0) current = foreground;
-        else if (panelPinned && IsActive && current.ProcessId == 0) current = foreground with { IsFullscreen = false };
+        if (gameMusicOpen && IsActive && current.ProcessId == 0 && mode == DisplayMode.Always) current = foreground;
+        else if (panelPinned && !gameMusicOpen && IsActive && current.ProcessId == 0)
+            current = foreground with { IsFullscreen = false };
         if (current != pendingForeground)
         {
             pendingForeground = current;
@@ -271,7 +277,15 @@ public partial class HudWindow : Window
         }
         if (!current.IsFullscreen || now - foregroundChangedAt >= 350) foreground = pendingForeground;
 
-        SetLive(mode == DisplayMode.Always || mode == DisplayMode.Automatic && games.IsFullscreenGame(foreground));
+        if (mode == DisplayMode.Automatic)
+        {
+            var previousGame = trackedGame.Handle == current.Handle && current.Handle != 0 && trackedGame.ProcessId == current.ProcessId
+                ? current
+                : Desktop.ReadTrackedGame(trackedGame);
+            trackedGame = SelectGameTarget(current, previousGame);
+        }
+
+        SetLive(mode == DisplayMode.Always || mode == DisplayMode.Automatic && trackedGame.IsFullscreen);
         if (gameMusicOpen && !live && mode != DisplayMode.Preview) DismissPanel();
         PreviewLabel.Visibility = mode == DisplayMode.Preview ? Visibility.Visible : Visibility.Collapsed;
         if (mode == DisplayMode.Preview)
@@ -282,7 +296,7 @@ public partial class HudWindow : Window
         }
         else if (live)
         {
-            UpdateCapture(foreground.ProcessId);
+            UpdateCapture(HudTarget.ProcessId);
             ShowFrames(capture?.Read());
         }
 
@@ -291,11 +305,27 @@ public partial class HudWindow : Window
         UpdatePanelHover(now);
     }
 
+    private ForegroundWindow SelectGameTarget(ForegroundWindow current, ForegroundWindow previousGame)
+    {
+        if (current.Handle != 0 && current == foreground && games.IsFullscreenGame(current)) return current;
+
+        // A window on another display leaves the tracked game visible. A normal
+        // app taking over the same display should not have a game HUD above it.
+        return games.IsFullscreenGame(previousGame)
+            && (current.ProcessId == 0 || current.Monitor != previousGame.Monitor || current.Handle == previousGame.Handle)
+            ? previousGame
+            : default;
+    }
+
+    private ForegroundWindow HudTarget =>
+        mode == DisplayMode.Automatic && trackedGame.IsFullscreen ? trackedGame : foreground;
+
     private void Position()
     {
         if (source is null) return;
-        ApplyDisplayWidth(Desktop.MonitorWidth(source.Handle, foreground.Monitor));
-        Desktop.CenterAtTop(source.Handle, foreground.Monitor);
+        var monitor = HudTarget.Monitor;
+        ApplyDisplayWidth(Desktop.MonitorWidth(source.Handle, monitor));
+        Desktop.CenterAtTop(source.Handle, monitor);
     }
 
     private void ApplyDisplayWidth(double available)
@@ -467,10 +497,7 @@ public partial class HudWindow : Window
         }
         if (live || mode == DisplayMode.Preview)
         {
-            gameMusicOpen = true;
-            gameWindow = Desktop.ForegroundHandle;
-            panel?.SetGameMusicMode(true);
-            PinPanel(activate: true);
+            OpenGameControls(activate: true);
             return;
         }
         if (mode != DisplayMode.Automatic) SetMode(DisplayMode.Automatic);
@@ -484,17 +511,26 @@ public partial class HudWindow : Window
         }
     }
 
-    private void PinPanel(bool activate)
+    private void OpenGameControls(bool activate)
+    {
+        gameMusicOpen = true;
+        gameWindow = Desktop.ForegroundHandle;
+        panel?.SetGameMusicMode(true);
+        if (activate) PinPanel(activate: true);
+        else SetShape(IslandShape.GameMusic);
+    }
+
+    private void PinPanel(bool activate, bool focusControls = true)
     {
         panelPinned = true;
-        focusPanelOnOpen = activate;
+        focusPanelOnOpen = activate && focusControls;
         dismissedUntilLeave = false;
         SetShape(gameMusicOpen ? IslandShape.GameMusic : IslandShape.Panel);
         if (activate && source is not null)
         {
             Desktop.AllowActivation(source.Handle);
             Activate();
-            if (!animatingMorph)
+            if (focusPanelOnOpen && !animatingMorph)
             {
                 panel?.FocusControls();
                 focusPanelOnOpen = false;
@@ -519,23 +555,27 @@ public partial class HudWindow : Window
 
     private void UpdatePanelHover(long now)
     {
-        if (source is null || shuttingDown) return;
-        if (gameMusicOpen && (live || mode == DisplayMode.Preview))
+        if (source is null || shuttingDown || choosingFile) return;
+        if (live || mode == DisplayMode.Preview)
         {
-            if (panel?.HoldsOpen != true && visibleBounds.Height > GameHeight + 10 &&
-                Desktop.ClickedOutside(source.Handle, visibleBounds, displayScale, visibleOutline)) DismissPanel();
+            if (panelPinned && gameMusicOpen)
+            {
+                if (panel?.HoldsOpen != true && visibleBounds.Height > GameHeight + 10 &&
+                    Desktop.ClickedOutside(source.Handle, visibleBounds, displayScale, visibleOutline)) DismissPanel();
+            }
+            else
+                UpdateGameHover(now, Desktop.PointInOverlay(source.Handle, visibleBounds, displayScale, visibleOutline) == true);
             return;
         }
-        if (mode == DisplayMode.Hidden || live || mode == DisplayMode.Preview)
+        if (mode == DisplayMode.Hidden)
         {
             panelPinned = false;
             focusPanelOnOpen = false;
             hoverStarted = leaveStarted = 0;
-            SetShape(mode == DisplayMode.Hidden ? IslandShape.Rest : IslandShape.Game);
+            SetShape(IslandShape.Rest);
             return;
         }
 
-        if (choosingFile) return;
         if (panelPinned)
         {
             if (panel?.HoldsOpen != true && visibleBounds.Height > 32 &&
@@ -549,6 +589,41 @@ public partial class HudWindow : Window
             && Desktop.CursorOver(source.Handle, visibleBounds.Width * displayScale,
                 visibleBounds.Top * displayScale, visibleBounds.Height * displayScale);
         UpdateHoverShape(now, overEdge || overIsland);
+    }
+
+    private void UpdateGameHover(long now, bool hovering)
+    {
+        if (shape is not (IslandShape.Game or IslandShape.GameMusic))
+        {
+            panelPinned = false;
+            focusPanelOnOpen = false;
+            hoverStarted = leaveStarted = 0;
+            SetShape(IslandShape.Game);
+            return;
+        }
+
+        if (dismissedUntilLeave)
+        {
+            if (hovering) return;
+            dismissedUntilLeave = false;
+        }
+
+        if (hovering)
+        {
+            leaveStarted = 0;
+            if (hoverStarted == 0) hoverStarted = now;
+            if (!gameMusicOpen && now - hoverStarted >= HoverIntentMs) OpenGameControls(activate: false);
+            return;
+        }
+
+        hoverStarted = 0;
+        if (!gameMusicOpen || panel?.HoldsOpen == true) return;
+        if (leaveStarted == 0) leaveStarted = now;
+        if (now - leaveStarted >= HoverExitMs)
+        {
+            DismissPanel();
+            dismissedUntilLeave = false;
+        }
     }
 
     private void UpdateHoverShape(long now, bool hovering)
@@ -907,7 +982,31 @@ public partial class HudWindow : Window
         temperatureStatus.Text = sensors;
     }
 
-    private void ChoosePresentMon()
+    internal void ReadIslandSettings(IslandPanel target)
+    {
+        // Keep the selected app stable while the island itself owns focus.
+        ruleTarget = mode == DisplayMode.Automatic && trackedGame.IsFullscreen ? trackedGame : lastApp;
+        UpdateProviderLabels();
+        var identity = GameDetection.IdentityFor(ruleTarget);
+        target.LoadSettings(mode, games.ShowGraph, games.LargeText, identity is null ? null : ruleTarget.Name,
+            games.OverrideFor(identity), sensorSetupPath is not null, $"{frameStatus.Text}\n{temperatureStatus.Text}");
+    }
+
+    internal void ChangeHudOption(bool isGraph, bool enabled)
+    {
+        if (isGraph) games.ShowGraph = enabled;
+        else games.LargeText = enabled;
+        SaveSettings();
+    }
+
+    internal void ChangeIslandMode(DisplayMode value) => SetMode(value);
+    internal void ChangeGameRule(bool? value)
+    {
+        SetGameOverride(value);
+        Tick();
+    }
+
+    internal void ChoosePresentMon()
     {
         var picker = new OpenFileDialog
         {
@@ -917,7 +1016,7 @@ public partial class HudWindow : Window
         };
         choosingFile = true;
         bool? accepted;
-        try { accepted = picker.ShowDialog(); }
+        try { accepted = IsActive ? picker.ShowDialog(this) : picker.ShowDialog(); }
         finally { choosingFile = false; }
         if (accepted != true) return;
         presentMonPath = picker.FileName;
@@ -942,7 +1041,7 @@ public partial class HudWindow : Window
         return File.Exists(path) ? path : null;
     }
 
-    private void OpenSensorInstaller()
+    internal void OpenSensorInstaller()
     {
         if (sensorSetupPath is not { } path) return;
         try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }

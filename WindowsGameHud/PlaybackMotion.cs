@@ -78,8 +78,13 @@ internal static class PlaybackMotion
     internal static void EaseTo(Animatable element, DependencyProperty property, double target, int milliseconds, bool animate)
     {
         var current = (double)element.GetValue(property);
-        element.SetValue(property, target);
-        element.BeginAnimation(property, animate ? To(current, target, milliseconds) : null);
+        // A new WPF clock does not start until the next render tick. Keep the
+        // presentation value underneath it so an interrupted control cannot
+        // briefly jump to its destination between input and that first frame.
+        element.SetValue(property, animate ? current : target);
+        var transition = animate ? To(current, target, milliseconds) : null;
+        if (transition is not null) transition.FillBehavior = FillBehavior.HoldEnd;
+        element.BeginAnimation(property, transition);
     }
 
     internal static DoubleAnimation To(double from, double to, int milliseconds) => new(from, to,

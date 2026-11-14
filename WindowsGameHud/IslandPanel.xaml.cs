@@ -11,6 +11,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Microsoft.Win32;
 
@@ -18,7 +19,7 @@ namespace SapphireGameHud;
 
 public partial class IslandPanel : UserControl, IDisposable
 {
-    private enum View { Music, Shelf, Clipboard, Timer }
+    private enum View { Music, Shelf, Clipboard, Timer, Settings }
 
     private sealed record ShelfItem(string Path)
     {
@@ -36,6 +37,8 @@ public partial class IslandPanel : UserControl, IDisposable
     private readonly Action<bool> listenToClipboard;
     private readonly WindowsMedia media;
     private View view;
+    private View previousView;
+    private bool loadingSettings;
     private MediaReading reading = MediaReading.Empty;
     private long receivedAt;
     private (TrackDirection Direction, long Expires)? trackIntent;
@@ -64,6 +67,7 @@ public partial class IslandPanel : UserControl, IDisposable
         Files.SelectionChanged += (_, _) => RemoveFile.IsEnabled = Files.SelectedItem is ShelfItem;
         Clips.SelectionChanged += (_, _) => CopyClip.IsEnabled = Clips.SelectedItem is ClipboardEntry;
         Loaded += (_, _) => UpdateSelection(false);
+        IsVisibleChanged += (_, _) => { if (!IsVisible) ViewTransitionLayer.Children.Clear(); };
         PanelBody.SizeChanged += (_, _) => ViewChanged?.Invoke();
         seekDebounce.Tick += async (_, _) =>
         {
@@ -76,7 +80,8 @@ public partial class IslandPanel : UserControl, IDisposable
         }));
     }
 
-    internal bool HoldsOpen => fileDragActive || pickerOpen || Seek.IsMouseCaptureWithin;
+    internal bool HoldsOpen => fileDragActive || pickerOpen || Seek.IsMouseCaptureWithin
+        || DisplayChoice.IsDropDownOpen || GameRuleChoice.IsDropDownOpen;
 
     internal event Action? ViewChanged;
 
@@ -97,6 +102,7 @@ public partial class IslandPanel : UserControl, IDisposable
     {
         if (Width == width) return;
         Width = width;
+        ClipboardTabIcon.Visibility = width < 360 ? Visibility.Collapsed : Visibility.Visible;
         OnViewChanged();
     }
 
@@ -107,6 +113,7 @@ public partial class IslandPanel : UserControl, IDisposable
             View.Shelf => AddFile,
             View.Clipboard => (Control)ClipboardEnabled,
             View.Timer => TimerButton,
+            View.Settings => SettingsButton,
             _ when Toggle.IsEnabled => Toggle,
             _ when Navigation.Visibility == Visibility.Visible => MusicTab,
             _ => this
@@ -121,6 +128,8 @@ public partial class IslandPanel : UserControl, IDisposable
     {
         if (enabled) SelectMusic();
         Navigation.Visibility = enabled ? Visibility.Collapsed : Visibility.Visible;
+        NavigationHeader.Margin = new Thickness(0, 0, 0, enabled ? 2 : 16);
+        SettingsOptions.MaxHeight = enabled ? 72 : 127;
         ViewHost.MinHeight = enabled ? 0 : 164;
         OnViewChanged();
     }
@@ -130,8 +139,9 @@ public partial class IslandPanel : UserControl, IDisposable
     private void UpdateSelection(bool animate)
     {
         if (SelectionIndicator is null || Navigation.ActualWidth <= 0) return;
+        SelectionIndicator.Visibility = view == View.Settings ? Visibility.Collapsed : Visibility.Visible;
         var slot = Navigation.ActualWidth / 4;
-        SelectionIndicator.Width = Math.Max(0, slot - 4);
+        SelectionIndicator.Width = Math.Max(0, slot - 6);
         PlaybackMotion.EaseTo(SelectionOffset, TranslateTransform.XProperty, (int)view * slot, 220,
             animate && IsVisible && SystemParameters.ClientAreaAnimation);
     }
@@ -146,24 +156,129 @@ public partial class IslandPanel : UserControl, IDisposable
     {
         if (view == destination) return;
         var direction = Math.Sign(destination - view);
+        CrossfadeView(direction);
         view = destination;
         MusicView.Visibility = ViewVisibility(View.Music);
         ShelfView.Visibility = ViewVisibility(View.Shelf);
         ClipboardView.Visibility = ViewVisibility(View.Clipboard);
         TimerView.Visibility = ViewVisibility(View.Timer);
+        SettingsView.Visibility = ViewVisibility(View.Settings);
         MusicTab.IsChecked = view == View.Music;
         ShelfTab.IsChecked = view == View.Shelf;
         ClipboardTab.IsChecked = view == View.Clipboard;
         TimerTab.IsChecked = view == View.Timer;
+        SettingsButton.Background = view == View.Settings ? (Brush)FindResource("ControlFill") : Brushes.Transparent;
         UpdateSelection(true);
         var incoming = view switch
         {
-            View.Shelf => ShelfView, View.Clipboard => ClipboardView, View.Timer => TimerView, _ => MusicView
+            View.Shelf => ShelfView, View.Clipboard => ClipboardView, View.Timer => TimerView,
+            View.Settings => SettingsView, _ => MusicView
         };
-        PlaybackMotion.Arrive(incoming, direction * 5, 170, .65);
+        PlaybackMotion.Arrive(incoming, direction * 4, 180, 0);
         OnViewChanged();
         if (moveFocus) FocusControls();
     }
+
+    private void CrossfadeView(int direction)
+    {
+        if (!IsVisible || !SystemParameters.ClientAreaAnimation || ViewHost.ActualWidth < 1 || ViewHost.ActualHeight < 1)
+        {
+            ViewTransitionLayer.Children.Clear();
+            return;
+        }
+
+        // Capture the current composition, including an interrupted transition.
+        // A noninteractive Canvas keeps outgoing content out of measurement and focus.
+        var dpi = VisualTreeHelper.GetDpi(ViewHost);
+        var snapshot = new RenderTargetBitmap((int)Math.Ceiling(ViewHost.ActualWidth * dpi.DpiScaleX),
+            (int)Math.Ceiling(ViewHost.ActualHeight * dpi.DpiScaleY), dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+        snapshot.Render(ViewHost);
+        snapshot.Freeze();
+        var ghost = new Image
+        {
+            Source = snapshot, Width = ViewHost.ActualWidth, Height = ViewHost.ActualHeight,
+            RenderTransform = new TranslateTransform(), IsHitTestVisible = false
+        };
+        ViewTransitionLayer.Children.Clear();
+        ViewTransitionLayer.Children.Add(ghost);
+        var fade = PlaybackMotion.To(1, 0, 140);
+        fade.FillBehavior = System.Windows.Media.Animation.FillBehavior.HoldEnd;
+        fade.Completed += (_, _) => ViewTransitionLayer.Children.Remove(ghost);
+        ghost.BeginAnimation(OpacityProperty, fade);
+        PlaybackMotion.EaseTo((TranslateTransform)ghost.RenderTransform, TranslateTransform.XProperty, -direction * 4, 140, true);
+    }
+
+    private HudWindow? Hud => Window.GetWindow(this) as HudWindow;
+
+    private void ToggleSettings(object sender, RoutedEventArgs e)
+    {
+        if (view == View.Settings)
+        {
+            ShowView(previousView);
+            return;
+        }
+        previousView = view;
+        Hud?.ReadIslandSettings(this);
+        ShowView(View.Settings);
+    }
+
+    internal void LoadSettings(HudWindow.DisplayMode mode, bool graph, bool largeText, string? appName,
+        bool? rule, bool sensorSetup, string providerStatus)
+    {
+        loadingSettings = true;
+        try
+        {
+            GraphSwitch.IsChecked = graph;
+            LargeTextSwitch.IsChecked = largeText;
+            DisplayChoice.SelectedIndex = (int)mode;
+            RuleAppName.Text = appName is null ? "No app selected for game detection" : $"Game detection for {appName}";
+            GameRuleChoice.IsEnabled = appName is not null;
+            GameRuleChoice.SelectedIndex = rule is null ? 0 : rule.Value ? 1 : 2;
+            SensorSetupButton.IsEnabled = sensorSetup;
+            ProviderStatus.Text = providerStatus;
+        }
+        finally { loadingSettings = false; }
+    }
+
+    private void ChangeGraphSetting(object sender, RoutedEventArgs e) => Hud?.ChangeHudOption(true, GraphSwitch.IsChecked == true);
+    private void ChangeTextSetting(object sender, RoutedEventArgs e) => Hud?.ChangeHudOption(false, LargeTextSwitch.IsChecked == true);
+
+    private void ChangeDisplayMode(object sender, SelectionChangedEventArgs e)
+    {
+        if (!loadingSettings && DisplayChoice.SelectedItem is ComboBoxItem { Tag: string tag }
+            && Enum.TryParse<HudWindow.DisplayMode>(tag, out var mode))
+            Hud?.ChangeIslandMode(mode);
+    }
+
+    private void ChangeGameRule(object sender, SelectionChangedEventArgs e)
+    {
+        if (!loadingSettings && GameRuleChoice.SelectedIndex >= 0)
+            Hud?.ChangeGameRule(GameRuleChoice.SelectedIndex switch { 1 => true, 2 => false, _ => null });
+    }
+
+    private void ChooseFrameProvider(object sender, RoutedEventArgs e)
+    {
+        Hud?.ChoosePresentMon();
+        Hud?.ReadIslandSettings(this);
+    }
+
+    private void OpenSensors(object sender, RoutedEventArgs e) => Hud?.OpenSensorInstaller();
+
+    private async void CheckForUpdates(object sender, RoutedEventArgs e)
+    {
+        UpdateButton.IsEnabled = false;
+        SetStatus(UpdateStatus, "Checking for updates…");
+        try
+        {
+            var message = Application.Current is App app
+                ? await app.CheckForUpdates()
+                : "Install Next Island to enable updates.";
+            SetStatus(UpdateStatus, message);
+        }
+        finally { UpdateButton.IsEnabled = true; }
+    }
+
+    private void QuitApp(object sender, RoutedEventArgs e) => Application.Current.Shutdown();
 
     private void OnViewChanged()
     {
@@ -554,6 +669,7 @@ public partial class IslandPanel : UserControl, IDisposable
 
     public void Dispose()
     {
+        ViewTransitionLayer.Children.Clear();
         seekDebounce.Stop();
         media.Dispose();
     }

@@ -2,14 +2,15 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:sys="clr-namespace:System;assembly=mscorlib">
     <SolidColorBrush x:Key="IslandFill" Color="#0D0E11"/>
-    <SolidColorBrush x:Key="IslandRim" Color="#303239"/>
+    <SolidColorBrush x:Key="IslandRim" Color="#292B30"/>
     <SolidColorBrush x:Key="Ink" Color="#F5F5F7"/>
     <SolidColorBrush x:Key="Muted" Color="#AEB3BD"/>
     <SolidColorBrush x:Key="Accent" Color="#C7D6F6"/>
-    <SolidColorBrush x:Key="Recessed" Color="#1B1D23"/>
-    <SolidColorBrush x:Key="ControlFill" Color="#25272E"/>
-    <SolidColorBrush x:Key="ControlHover" Color="#32353E"/>
-    <SolidColorBrush x:Key="ControlPressed" Color="#414550"/>
+    <SolidColorBrush x:Key="Recessed" Color="#181A1F"/>
+    <SolidColorBrush x:Key="NavigationFill" Color="#17181C"/>
+    <SolidColorBrush x:Key="ControlFill" Color="#282A30"/>
+    <SolidColorBrush x:Key="ControlHover" Color="#34363D"/>
+    <SolidColorBrush x:Key="ControlPressed" Color="#3D4048"/>
     <SolidColorBrush x:Key="TrackFill" Color="#393C46"/>
     <FontFamily x:Key="IslandFont">Segoe UI Variable Text, Segoe UI</FontFamily>
     <sys:Double x:Key="BodySize">13</sys:Double>
@@ -18,7 +19,8 @@
     <Thickness x:Key="PanelInsets">20,14,20,18</Thickness>
     <Thickness x:Key="ControlInsets">12,8</Thickness>
     <CornerRadius x:Key="ControlRadius">12</CornerRadius>
-    <CornerRadius x:Key="ArtworkRadius">10</CornerRadius>
+    <CornerRadius x:Key="ArtworkRadius">12</CornerRadius>
+    <Geometry x:Key="SettingsIcon">M6.5,1 H9.5 L10,3 L11.5,4 L13.5,3.5 L15,6 L13.5,7.5 V9 L15,10.5 L13.5,13 L11.5,12.5 L10,13.5 L9.5,15.5 H6.5 L6,13.5 L4.5,12.5 L2.5,13 L1,10.5 L2.5,9 V7.5 L1,6 L2.5,3.5 L4.5,4 L6,3 Z M10.5,8.25 A2.5,2.5 0 1 1 5.5,8.25 A2.5,2.5 0 1 1 10.5,8.25</Geometry>
     <Geometry x:Key="MusicIcon">M5,11 C2,10 1,14 4,14 C6,14 7,13 7,11 L7,4 L13,2 L13,10 C12,8 9,9 9,11 C9,13 13,13 13,10</Geometry>
     <Geometry x:Key="ShelfIcon">M1,8 L4,2 H12 L15,8 V14 H1 Z M1,8 H5 L6,10 H10 L11,8 H15</Geometry>
     <Geometry x:Key="ClipboardIcon">M5,3 H3 V15 H13 V3 H11 M5,2 H11 V5 H5 Z M6,8 H10 M6,11 H10</Geometry>

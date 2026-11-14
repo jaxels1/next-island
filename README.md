@@ -10,9 +10,11 @@ Installed copies check GitHub for stable updates at launch and every six hours. 
 
 - Hover at the top center, then click the pill for playback controls. Use the tabs to switch to the file shelf, clipboard history, or timer.
 - Press **Ctrl+Alt+F9** to open the island. During a game, the same shortcut expands music controls beneath the live readings. Press **Esc** to close.
+- Hover briefly over the game HUD to reveal playback and settings. Move away to collapse it, or click a control to keep the panel open.
 - Press **Ctrl+Alt+F10** to pin or unpin the game HUD. If automatic detection misses your game, focus it and use **Game detection** from the tray.
+- Click the gear in the upper-right corner of the expanded island for settings, **Check for updates**, and **Quit app**.
 
-Borderless fullscreen works best. Game detection uses local information and can miss some titles. FPS capture and temperature readings depend on Windows permissions, drivers, and hardware. A dash means a reading is unavailable. The installer is unsigned, so Windows may block it under Smart App Control.
+Borderless fullscreen works best. In automatic mode, the HUD stays on a detected fullscreen game's screen when you use another monitor. Game detection uses local information and can miss some titles. FPS capture and temperature readings depend on Windows permissions, drivers, and hardware. A dash means a reading is unavailable. The installer is unsigned, so Windows may block it under Smart App Control.
 
 ## Build from source
 
@@ -27,6 +29,16 @@ powershell -NoProfile -File .\WindowsGameHud\Build-Installer.ps1
 The second command builds the self-contained bundle under WindowsGameHud/bin/Next Island. PresentMon is included. Some CPUs need the optional [PawnIO driver](https://github.com/namazso/PawnIO.Setup/releases/tag/2.2.0) for temperatures.
 
 The installer command writes setup and update files under `WindowsGameHud/bin/installer/<version>`. To publish a new version, bump `Version` in `NextIsland.csproj`, commit it, and push a matching tag such as `v0.2.1`. GitHub Actions packages the tagged commit and publishes the installer, full update package, and update feed together.
+
+### Build a signed GitHub installer
+
+Use a publicly trusted code-signing certificate with a private key accessible through the current user's Windows certificate store. With the certificate available, run:
+
+```powershell
+powershell -NoProfile -File .\WindowsGameHud\Build-Installer.ps1 -SigningCertificateThumbprint '<thumbprint>'
+```
+
+Velopack signs the application files and installer during packaging. Publish the generated setup, full update package, and feed from the same build so the feed hashes match. A self-signed certificate does not establish public trust. [Microsoft’s signing requirements](https://learn.microsoft.com/en-us/windows/apps/develop/smart-app-control/code-signing-for-smart-app-control)
 
 To check the interface, run `dotnet run --project Verification -c Release`. This exercises the island states and writes preview images to the verification output folder. Add `-- --interactive` to open a temporary panel with sample media for mouse and keyboard checks. See [the interface notes](DESIGN.md) for the visual system and testing limits.
 

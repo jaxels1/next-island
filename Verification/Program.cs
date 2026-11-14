@@ -73,6 +73,7 @@ internal static class Program
                 var scene = Field<FrameworkElement>(hud, "Scene");
                 var panel = Field<FrameworkElement>(hud, "panel");
                 var sample = NewTrack();
+                VerifyGameTarget(hud);
                 panel.GetType().GetMethod("UpdateMedia", Private)!.Invoke(panel, [sample]);
                 VerifyPlaybackMotion(sample);
                 var now = Environment.TickCount64;
@@ -132,6 +133,7 @@ internal static class Program
                 Settle(hud, ((FrameworkElement)panel).Width, panelHeight, 1);
                 var controls = CropCenter(Render(scene), 406, (int)Math.Ceiling(panelHeight + 16));
                 CaptureDesktopTools(hud, panel, scene, args[0]);
+                VerifySettings(hud, panel, scene, args[0]);
                 Call(hud, "DismissPanel");
                 Require(Shape(hud) == "Rest", "Explicit dismissal");
 
@@ -153,6 +155,7 @@ internal static class Program
                 var bounds = Field<Rect>(hud, "visibleBounds");
                 Require(bounds.Top == 7 && bounds.Height == 26, "Game island must float and stay shallow");
                 var game = CropCenter(Render(scene), (int)gameWidth + 8, 36);
+                CheckGameHover(hud);
                 VerifyRamReading(hud);
                 VerifyTelemetryFit(hud, 600, 13, 26);
                 VerifyTelemetryFit(hud, 690, 16, 32);
@@ -175,12 +178,14 @@ internal static class Program
                 Settle(hud, gameWidth + 154, 26 + gamePanelHeight, 1, 1);
                 Call(Field<object>(hud, "GamePlayback"), "UpdateBars");
                 var gameControls = CropCenter(Render(scene), (int)gameWidth + 162, (int)gamePanelHeight + 40);
+                VerifyInGameSettings(hud, panel, gameWidth + 154);
                 Call(hud, "DismissPanel");
                 Require(Shape(hud) == "Game", "Game music closes back to live HUD");
                 VerifyGameLayouts(hud, scene, games, args[0]);
                 VerifyInterruptedMorph(hud, scene);
                 VerifyRefinements(hud, panel, sample);
                 VerifyRepeatedMotion(scene);
+                VerifyPolishedInteractions(hud, panel);
                 Save(args[0], strip, controls, game, gameWithMusic, gameControls);
                 Console.WriteLine($"PASS: rest, hover intent, compact hover, explicit panel, alerts, click-through, widths at 768p through 4K, longest readings, music panel {panelHeight:0} DIPs");
             }
@@ -190,6 +195,124 @@ internal static class Program
         launch.Start();
         Dispatcher.Run();
         if (failure is not null) throw failure;
+    }
+
+    private static void VerifyGameTarget(HudWindow hud)
+    {
+        var type = typeof(HudWindow).Assembly.GetType("SapphireGameHud.ForegroundWindow")!;
+        object Window(int pid, string name, int monitor, bool fullscreen, int handle) =>
+            Activator.CreateInstance(type, [pid, name, (nint)monitor, fullscreen, null, null, (nint)handle])!;
+        var game = Window(100, "RobloxPlayerBeta", 1, true, 11);
+        var music = Window(200, "Spotify", 2, false, 22);
+        var sameDisplay = Window(200, "Spotify", 1, false, 22);
+        var windowed = Window(100, "RobloxPlayerBeta", 1, false, 11);
+        var secondGame = Window(300, "RobloxPlayerBeta", 2, true, 33);
+        var noGame = Activator.CreateInstance(type)!;
+        var originalForeground = Field<object>(hud, "foreground");
+        var select = typeof(HudWindow).GetMethod("SelectGameTarget", Private)!;
+        var target = typeof(HudWindow).GetProperty("HudTarget", Private)!;
+        object Select(object current, object previous) => select.Invoke(hud, [current, previous])!;
+
+        Write(hud, "foreground", game);
+        Require(Select(game, noGame).Equals(game), "Fullscreen Roblox is acquired");
+        Write(hud, "foreground", music);
+        var retained = Select(music, game);
+        Require(retained.Equals(game), "Spotify on the second monitor does not replace Roblox");
+        Write(hud, "trackedGame", retained);
+        Require(target.GetValue(hud)!.Equals(game), "Position and capture keep the game's monitor and PID");
+        Require(Select(sameDisplay, game).Equals(noGame), "Ordinary app on the game display clears the HUD");
+        Require(Select(music, windowed).Equals(noGame), "Leaving fullscreen clears the HUD");
+        Require(Select(music, noGame).Equals(noGame), "Closed or minimized tracked game clears the HUD");
+        Require(Select(secondGame, game).Equals(game), "Keep the last game while new fullscreen focus settles");
+        Write(hud, "foreground", secondGame);
+        Require(Select(secondGame, game).Equals(secondGame), "A newly focused fullscreen game takes over");
+        Write(hud, "foreground", originalForeground);
+        Write(hud, "trackedGame", noGame);
+        Console.WriteLine("PASS: game monitor and capture PID persist across displays, with fullscreen exit and game switch");
+    }
+
+    private static void VerifySettings(HudWindow hud, FrameworkElement panel, FrameworkElement scene, string destination)
+    {
+        var button = Field<System.Windows.Controls.Button>(panel, "SettingsButton");
+        var settings = Field<FrameworkElement>(panel, "SettingsView");
+        var update = Field<System.Windows.Controls.Button>(panel, "UpdateButton");
+        var quit = Field<System.Windows.Controls.Button>(panel, "QuitButton");
+        var displayMode = Field<System.Windows.Controls.ComboBox>(panel, "DisplayChoice");
+        var heightProperty = panel.GetType().GetProperty("DesiredPanelHeight", Private)!;
+        foreach (var width in new[] { 328d, 384d })
+        {
+            Call(panel, "ResizeTo", width);
+            button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            var height = (double)heightProperty.GetValue(panel)!;
+            Settle(hud, width, height, 1);
+            height = (double)heightProperty.GetValue(panel)!;
+            Settle(hud, width, height, 1);
+            Require(settings.IsVisible && update.IsVisible && quit.IsVisible, "Gear opens settings with both app actions");
+            Require(displayMode.SelectedIndex == 0, "Settings shows the current automatic mode");
+            var gearPosition = button.TransformToAncestor(panel).Transform(new Point());
+            Require(gearPosition.X + button.ActualWidth <= width && width - gearPosition.X <= 54,
+                "Settings gear fits at the upper-right edge");
+            var updateBounds = update.TransformToAncestor(panel).TransformBounds(new Rect(update.RenderSize));
+            Require(height <= 324 && updateBounds.Bottom <= height,
+                $"Settings actions fit within the desktop island at {width} DIPs (height {height})");
+            if (width == 384)
+            {
+                var bitmap = CropCenter(Render(scene), 408, Math.Min(336, (int)height + 20));
+                var encoder = new PngBitmapEncoder();
+                encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                using var output = File.Create(Path.ChangeExtension(destination, ".settings.png"));
+                encoder.Save(output);
+            }
+            update.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            Require(Field<System.Windows.Controls.TextBlock>(panel, "UpdateStatus").Text == "Install Next Island to enable updates.",
+                "Update button explains that the preview build is not installed");
+            button.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+            Require(!settings.IsVisible, "Gear returns to the previous view");
+        }
+        Console.WriteLine("PASS: corner settings gear, settings layout at both panel widths, and update button");
+    }
+
+    private static void CheckGameHover(HudWindow hud)
+    {
+        var now = Environment.TickCount64 + 1_000;
+        Call(hud, "UpdateGameHover", now - 1, false);
+        Call(hud, "UpdateGameHover", now, true);
+        Call(hud, "UpdateGameHover", now + 100, true);
+        Require(Shape(hud) == "Game", "Passing over the game HUD does not open controls");
+        Call(hud, "UpdateGameHover", now + 160, true);
+        var handle = new WindowInteropHelper(hud).Handle;
+        Require(Shape(hud) == "GameMusic" && !Field<bool>(hud, "panelPinned") &&
+            (GetWindowLong(handle, -20) & 0x08000020) == 0x08000000,
+            "Hover reveals interactive game controls without activating the window");
+        Call(hud, "UpdateGameHover", now + 200, false);
+        Call(hud, "UpdateGameHover", now + 250, true);
+        Require(Shape(hud) == "GameMusic", "Moving between the HUD and controls keeps the island open");
+        Call(hud, "UpdateGameHover", now + 300, false);
+        Call(hud, "UpdateGameHover", now + 440, false);
+        Require(Shape(hud) == "Game" && (GetWindowLong(handle, -20) & 0x20) != 0,
+            "Leaving the island restores the click-through HUD");
+        Call(hud, "UpdateGameHover", now + 500, true);
+        Call(hud, "UpdateGameHover", now + 660, true);
+        Call(hud, "DismissPanel");
+        Call(hud, "UpdateGameHover", now + 850, true);
+        Require(Shape(hud) == "Game", "Dismissing controls blocks hover until the pointer leaves");
+        Call(hud, "UpdateGameHover", now + 900, false);
+        Console.WriteLine("PASS: deliberate game hover, nonactivating controls, leave grace, and click-through restored");
+    }
+
+    private static void VerifyInGameSettings(HudWindow hud, FrameworkElement panel, double width)
+    {
+        var gear = Field<System.Windows.Controls.Button>(panel, "SettingsButton");
+        var quit = Field<System.Windows.Controls.Button>(panel, "QuitButton");
+        var heightProperty = panel.GetType().GetProperty("DesiredPanelHeight", Private)!;
+        gear.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+        var height = (double)heightProperty.GetValue(panel)!;
+        Settle(hud, width, 26 + height, 1, 1);
+        Require(Shape(hud) == "GameMusic" && gear.IsVisible && quit.IsVisible,
+            "Settings and Quit app are accessible while game metrics remain onscreen");
+        var bounds = quit.TransformToAncestor(hud).TransformBounds(new Rect(quit.RenderSize));
+        Require(bounds.Bottom < hud.ActualHeight, "Game settings actions stay within the window");
+        gear.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
     }
 
     private static void VerifyRepeatedMotion(FrameworkElement scene)
@@ -529,9 +652,59 @@ internal static class Program
 
     private static RenderTargetBitmap Render(FrameworkElement element)
     {
+        // Capture settled controls rather than the first frame of a tab crossfade.
+        WaitForUi(240);
         var result = new RenderTargetBitmap((int)element.ActualWidth, (int)element.ActualHeight, 96, 96, PixelFormats.Pbgra32);
         result.Render(element);
         return result;
+    }
+
+    private static void WaitForUi(int milliseconds)
+    {
+        var frame = new DispatcherFrame();
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(milliseconds) };
+        timer.Tick += (_, _) => { timer.Stop(); frame.Continue = false; };
+        timer.Start();
+        Dispatcher.PushFrame(frame);
+    }
+
+    private static void VerifyPolishedInteractions(HudWindow hud, FrameworkElement panel)
+    {
+        Call(panel, "SetGameMusicMode", false);
+        Call(panel, "ResizeTo", 384d);
+        var kind = typeof(HudWindow).GetNestedType("IslandShape", BindingFlags.NonPublic)!;
+        Call(hud, "SetShape", Enum.Parse(kind, "Panel"));
+        Settle(hud, 384, 280, 1);
+        var viewType = panel.GetType().GetNestedType("View", BindingFlags.NonPublic)!;
+        var layer = Field<System.Windows.Controls.Canvas>(panel, "ViewTransitionLayer");
+        foreach (var name in new[] { "Music", "Timer", "Shelf", "Clipboard", "Music" })
+        {
+            Call(panel, "ShowView", Enum.Parse(viewType, name), false);
+            hud.UpdateLayout();
+            Require(layer.Children.Count <= 1 && !layer.IsHitTestVisible, "Crossfades never accumulate or block input");
+            WaitForUi(35);
+        }
+        WaitForUi(240);
+        Require(layer.Children.Count == 0, "Interrupted crossfade releases its outgoing bitmap");
+        Require(Field<FrameworkElement>(panel, "MusicView").Opacity == 1, "Final view is fully visible after rapid navigation");
+        var transformTarget = new System.Windows.Controls.Border { Width = 16, Height = 16 };
+        var host = Field<System.Windows.Controls.Grid>(hud, "Scene");
+        host.Children.Add(transformTarget);
+        hud.UpdateLayout();
+        try
+        {
+            ButtonPress.SetOffsetX(transformTarget, 14);
+            WaitForUi(50);
+            var offset = (TranslateTransform)transformTarget.RenderTransform;
+            var current = offset.X;
+            ButtonPress.SetOffsetX(transformTarget, 0);
+            if (SystemParameters.ClientAreaAnimation)
+                Require(Math.Abs(offset.X - current) < .05, "Switch reversal starts at the visible position");
+            WaitForUi(220);
+            Require(offset.X == 0, "Rapidly reversed switch settles in its actual state");
+        }
+        finally { host.Children.Remove(transformTarget); }
+        Console.WriteLine("PASS: interrupted view crossfades clean up, do not block input, and switch motion reverses continuously");
     }
 
     private static bool IsTransparent(BitmapSource image)

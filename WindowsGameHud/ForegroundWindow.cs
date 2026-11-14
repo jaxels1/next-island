@@ -10,12 +10,13 @@ using Microsoft.Win32.SafeHandles;
 namespace SapphireGameHud;
 
 internal readonly record struct ForegroundWindow(int ProcessId, string Name, nint Monitor, bool IsFullscreen,
-    string? Executable = null, string? PackageFamily = null);
+    string? Executable = null, string? PackageFamily = null, nint Handle = 0);
 
 internal static class Desktop
 {
     private const uint NearestMonitor = 2;
     private const int ExtendedFrameBounds = 9;
+    private const int Cloaked = 14;
     private const int Style = -16;
     private const int ExtendedStyle = -20;
     private const int Caption = 0x00C00000;
@@ -35,11 +36,21 @@ internal static class Desktop
         if (window != 0) SetForegroundWindow(window);
     }
 
-    internal static ForegroundWindow ReadForeground(ForegroundWindow previous = default)
+    internal static ForegroundWindow ReadForeground(ForegroundWindow previous = default) =>
+        ReadWindow(GetForegroundWindow(), previous);
+
+    internal static ForegroundWindow ReadTrackedGame(ForegroundWindow game)
     {
-        var window = GetForegroundWindow();
+        if (game.Handle == 0) return default;
+        var current = ReadWindow(game.Handle, game);
+        return current.ProcessId == game.ProcessId ? current : default;
+    }
+
+    private static ForegroundWindow ReadWindow(nint window, ForegroundWindow previous)
+    {
         var monitor = MonitorFromWindow(window, NearestMonitor);
-        if (window == 0) return new(0, "Desktop", monitor, false);
+        if (window == 0 || !IsWindowVisible(window) || IsIconic(window))
+            return new(0, "Desktop", monitor, false);
 
         GetWindowThreadProcessId(window, out var processId);
         if (processId == 0 || processId == Environment.ProcessId || window == GetShellWindow())
@@ -70,10 +81,12 @@ internal static class Desktop
 
         var maximizedWithCaption = IsZoomed(window) && (GetWindowLong(window, Style) & Caption) == Caption;
         var bounds = ReadMonitor(monitor);
-        var hasFrame = DwmGetWindowAttribute(window, ExtendedFrameBounds, out var frame, Marshal.SizeOf<Rect>()) == 0
+        var hasFrame = DwmGetWindowAttribute(window, ExtendedFrameBounds, out Rect frame, Marshal.SizeOf<Rect>()) == 0
             || GetWindowRect(window, out frame);
-        var fullscreen = hasFrame && bounds.Width > 0 && !maximizedWithCaption && CoversMonitor(frame, bounds);
-        return new(processId, name, monitor, fullscreen, executable, packageFamily);
+        var fullscreen = hasFrame && bounds.Width > 0 && !maximizedWithCaption
+            && CoversMonitor(frame, bounds)
+            && (DwmGetWindowAttribute(window, Cloaked, out int cloaked, sizeof(int)) != 0 || cloaked == 0);
+        return new(processId, name, monitor, fullscreen, executable, packageFamily, window);
     }
 
     private static string WindowClass(nint window)
@@ -163,11 +176,16 @@ internal static class Desktop
         const int leftButton = 1;
         const int rightButton = 2;
         if (GetAsyncKeyState(leftButton) >= 0 && GetAsyncKeyState(rightButton) >= 0) return false;
-        if (outline is null || !GetCursorPos(out var cursor) || !GetWindowRect(window, out var frame)) return false;
+        return PointInOverlay(window, bounds, scale, outline) == false;
+    }
+
+    internal static bool? PointInOverlay(nint window, System.Windows.Rect bounds, double scale, System.Windows.Media.Geometry? outline)
+    {
+        if (outline is null || !GetCursorPos(out var cursor) || !GetWindowRect(window, out var frame)) return null;
         var dpiScale = GetDpiForWindow(window) / 96d * scale;
-        if (dpiScale <= 0) return false;
+        if (dpiScale <= 0) return null;
         var left = frame.Left + (frame.Width - bounds.Width * dpiScale) / 2;
-        return !outline.FillContains(new System.Windows.Point((cursor.X - left) / dpiScale,
+        return outline.FillContains(new System.Windows.Point((cursor.X - left) / dpiScale,
             (cursor.Y - frame.Top) / dpiScale - bounds.Top));
     }
 
@@ -236,6 +254,8 @@ internal static class Desktop
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out CursorPoint point);
     [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int virtualKey);
     [DllImport("user32.dll")] private static extern bool IsZoomed(nint window);
+    [DllImport("user32.dll")] private static extern bool IsWindowVisible(nint window);
+    [DllImport("user32.dll")] private static extern bool IsIconic(nint window);
     [DllImport("user32.dll")] private static extern uint GetDpiForWindow(nint window);
     [DllImport("user32.dll", EntryPoint = "GetWindowLongW")] private static extern int GetWindowLong(nint window, int index);
     [DllImport("user32.dll", EntryPoint = "SetWindowLongW")] private static extern int SetWindowLong(nint window, int index, int value);
@@ -245,4 +265,5 @@ internal static class Desktop
     [DllImport("user32.dll")] private static extern bool AddClipboardFormatListener(nint window);
     [DllImport("user32.dll")] private static extern bool RemoveClipboardFormatListener(nint window);
     [DllImport("dwmapi.dll")] private static extern int DwmGetWindowAttribute(nint window, int attribute, out Rect rect, int size);
+    [DllImport("dwmapi.dll")] private static extern int DwmGetWindowAttribute(nint window, int attribute, out int value, int size);
 }

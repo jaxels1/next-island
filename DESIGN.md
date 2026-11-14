@@ -8,13 +8,15 @@ Next Island should stay quiet until it is useful. The desktop panel is an intent
 
 The desktop panel is 384 DIPs wide, shrinking to 328 DIPs on narrow displays. The navigation occupies the same top position in every desktop view. A shared selection surface slides between its four destinations. Media content, shelf files, clipboard entries, and timer state are the focus beneath it. Navigation is omitted from expanded game playback.
 
+The navigation sits in a single recessed rail, with a separate outline settings icon in the corner. Music uses 72-DIP artwork, a centered playback row, and a timeline below it. Settings switches align on the right so labels share the same reading edge. These changes do not enlarge the compact pill or game HUD.
+
 The compact pill remains 38 DIPs tall with a content-driven width of 176–280 DIPs. The game HUD remains 26 DIPs tall, or 32 with larger text. Its existing responsive widths, two-row fallback, click-through behavior, telemetry providers, and detection rules are preserved. The music pocket moves alongside telemetry and playback expands underneath it only on request.
 
 ## Interaction details
 
 - Transport buttons use filled playback glyphs. Play/Pause has a distinct circular surface and a 44-DIP target. Other targets are at least 32 DIPs.
-- Mouse presses compress the control. Keyboard focus remains visible. Long media titles truncate and expose their full text in a tooltip.
-- Tab selection moves over 220 ms; incoming content settles over 170 ms. Retargeting uses the current visible values. The outer shape uses its existing interruptible, critically damped springs.
+- Mouse presses compress controls to 96% over 100 ms and release over 160 ms. Keyboard focus remains visible. Long media titles truncate and expose their full text in a tooltip.
+- Tab selection moves over 220 ms; incoming content settles over 180 ms while a noninteractive snapshot of the outgoing content fades over 140 ms. Rapid changes capture the visible composition and retain at most one outgoing image; hidden panels discard it. Settings switches glide over 160 ms. Retargeting keeps the current visible value even before the next render tick. The outer shape uses its existing interruptible, critically damped springs.
 - Reduced motion removes displacement and stops playback bars. Hidden and paused bars do not keep a timer running.
 - Shelf drag targets highlight while accepting a drop. Missing files, shelf limits, and open failures show actionable inline feedback. Enter opens a selected file; Delete removes its shelf entry while preserving the original file.
 - Clipboard history remains opt-in and session-only. Copy reports success, and Ctrl+C, Enter, or double-click copies the selected entry. Clipboard failures are visible.
@@ -27,3 +29,5 @@ Run `dotnet run --project Verification -c Release` on Windows with the .NET 10 S
 Use `dotnet run --project Verification -c Release -- --interactive` for a four-minute control host with sample media. The normal test-window chrome belongs to the host; the embedded panel is the app's actual control. This is a test fixture, not a real media session. It does not validate live-game focus return, anti-cheat compatibility, FPS capture, or physical mixed-DPI displays. Those need separate Windows hardware testing.
 
 The overview captures use illustrative artwork and readings. Inspect the rendered app at 100% scale as well as the overview. Build success and fixture checks are evidence, not a substitute for live-game testing.
+
+The verification runner also checks interrupted tab crossfades, snapshot cleanup, and switch reversals. Capture helpers let content transitions settle before taking screenshots.
