@@ -54,7 +54,7 @@ jobs:
           $exe = Get-Item -LiteralPath (Join-Path $install 'current/NextIsland.exe')
           if ($exe.VersionInfo.FileVersion -ne "$($asset[0].Version).0") { throw 'Installed executable version does not match the tag.' }
           Get-Item -LiteralPath (Join-Path $install 'Update.exe')
-      - name: Publish release
+      - name: Create release draft
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -64,5 +64,5 @@ jobs:
           $installer = Join-Path $output 'NextIsland-win-Setup.exe'
           $package = Join-Path $output "NextIsland-$version-full.nupkg"
           $feed = Join-Path $output 'releases.win.json'
-          gh release create $env:RELEASE_TAG $installer $package $feed --verify-tag --title "Next Island $env:RELEASE_TAG" --generate-notes
+          gh release create $env:RELEASE_TAG $installer $package $feed --draft --verify-tag --title "Next Island $env:RELEASE_TAG" --generate-notes
           if ($LASTEXITCODE -ne 0) { throw 'GitHub release publication failed.' }
