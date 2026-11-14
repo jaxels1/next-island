@@ -59,6 +59,9 @@ public partial class HudWindow : Window
     private readonly List<Task> closingCaptures = [];
     private IslandPanel? panel;
     private MediaReading currentMedia = MediaReading.Empty;
+    private long? musicPausedAt;
+    private bool ShowMusic(long now) => currentMedia.HasTrack && !currentMedia.Stopped &&
+        (currentMedia.Playing || musicPausedAt is { } pausedAt && now - pausedAt < 10_000);
     private bool clipboardListening;
     private bool panelPinned;
     private bool choosingFile;
@@ -302,6 +305,7 @@ public partial class HudWindow : Window
 
         Position();
         RefreshCompact(now);
+        if (IsGameShape) UpdateGameTrack();
         UpdatePanelHover(now);
     }
 
@@ -380,10 +384,11 @@ public partial class HudWindow : Window
 
     private void RefreshCompact(long now)
     {
+        var showMusic = ShowMusic(now);
         var timerText = now < timerPeekUntil ? "Time’s up"
             : now < mediaPeekUntil ? null : panel?.CompactTimerText;
         var notice = now < mediaPeekUntil ? playbackNotice : null;
-        var title = timerText ?? notice ?? (currentMedia.HasTrack ? currentMedia.Title : "Next Island");
+        var title = timerText ?? notice ?? (showMusic ? currentMedia.Title : "Next Island");
         if (CompactTitle.Text != title)
         {
             CompactTitle.Text = title;
@@ -399,10 +404,10 @@ public partial class HudWindow : Window
             }
         }
         var playing = timerText is null && currentMedia.Playing;
-        CompactArt.Visibility = timerText is null && (currentMedia.Artwork is not null || notice == "Playback ended" && CompactArt.Fill is not null)
+        CompactArt.Visibility = timerText is null && (showMusic && currentMedia.Artwork is not null || notice == "Playback ended" && CompactArt.Fill is not null)
             ? Visibility.Visible : Visibility.Collapsed;
         CompactPlayback.Visibility = playing ? Visibility.Visible : Visibility.Collapsed;
-        if (timerText is null && (currentMedia.HasTrack || notice == "Paused")) CompactPlayback.Visibility = Visibility.Visible;
+        if (timerText is null && (showMusic || notice == "Paused")) CompactPlayback.Visibility = Visibility.Visible;
         CompactPlayback.SetPlaying(playing);
         CompactClock.Visibility = CompactPlayback.Visibility == Visibility.Visible || notice is not null || now < timerPeekUntil
             ? Visibility.Collapsed : Visibility.Visible;
@@ -448,6 +453,8 @@ public partial class HudWindow : Window
             CompactArt.Fill = new ImageBrush(endingArt) { Stretch = Stretch.UniformToFill };
         else if ((CompactArt.Fill as ImageBrush)?.ImageSource != reading.Artwork && (reading.HasTrack || now >= mediaPeekUntil))
             CompactArt.Fill = reading.Artwork is { } art ? new ImageBrush(art) { Stretch = Stretch.UniformToFill } : null;
+        if (!reading.HasTrack || reading.Stopped || reading.Playing) musicPausedAt = null;
+        else musicPausedAt ??= now;
         currentMedia = reading;
         if (reading.HasTrack)
         {
@@ -663,7 +670,7 @@ public partial class HudWindow : Window
     {
         if (shape == target) return;
         shape = target;
-        showGameTrack = IsGameShape && currentMedia.HasTrack && !currentMedia.Stopped;
+        showGameTrack = IsGameShape && ShowMusic(Environment.TickCount64);
         if (source is not null) Desktop.ConfigureOverlay(source.Handle, target is IslandShape.Game or IslandShape.Rest);
         StartMorph();
     }
@@ -672,7 +679,7 @@ public partial class HudWindow : Window
 
     private void UpdateGameTrack()
     {
-        var show = currentMedia.HasTrack && !currentMedia.Stopped;
+        var show = ShowMusic(Environment.TickCount64);
         if (show == showGameTrack) return;
         showGameTrack = show;
         StartMorph();

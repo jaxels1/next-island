@@ -156,6 +156,7 @@ internal static class Program
                 Require(bounds.Top == 7 && bounds.Height == 26, "Game island must float and stay shallow");
                 var game = CropCenter(Render(scene), (int)gameWidth + 8, 36);
                 CheckGameHover(hud);
+                CheckPausedMusic(hud, sample);
                 VerifyRamReading(hud);
                 VerifyTelemetryFit(hud, 600, 13, 26);
                 VerifyTelemetryFit(hud, 690, 16, 32);
@@ -299,6 +300,31 @@ internal static class Program
         Call(hud, "UpdateGameHover", now + 900, false);
         Console.WriteLine("PASS: deliberate game hover, nonactivating controls, leave grace, and click-through restored");
     }
+
+    private static void CheckPausedMusic(HudWindow hud, object sample)
+    {
+        var paused = typeof(object).GetMethod("MemberwiseClone", Private)!.Invoke(sample, null)!;
+        paused.GetType().GetProperty("Playing")!.SetValue(paused, false);
+        Call(hud, "ReceiveMedia", paused, PlaybackChange("Paused"));
+        var started = Field<long?>(hud, "musicPausedAt")!.Value;
+        Call(hud, "ReceiveMedia", paused, PlaybackChange());
+        Require(Field<long?>(hud, "musicPausedAt") == started, "Repeated paused readings preserve the deadline");
+        Require((bool)CallResult(hud, "ShowMusic", started + 9_999), "Paused music remains for ten seconds");
+        Require(!(bool)CallResult(hud, "ShowMusic", started + 10_000), "Paused music expires at ten seconds");
+        Write(hud, "musicPausedAt", (long?)(Environment.TickCount64 - 10_001));
+        Call(hud, "Tick");
+        Require(!Field<bool>(hud, "showGameTrack"), "Tick removes expired game music without a media event");
+        Require(Field<System.Windows.Controls.TextBlock>(hud, "CompactTitle").Text == "Next Island" &&
+            Field<FrameworkElement>(hud, "CompactArt").Visibility == Visibility.Collapsed,
+            "Compact island clears paused track and artwork");
+        Call(hud, "ReceiveMedia", sample, PlaybackChange("Resumed"));
+        Require(Field<bool>(hud, "showGameTrack") && Field<long?>(hud, "musicPausedAt") is null,
+            "Resuming restores music immediately");
+        Console.WriteLine("PASS: ten-second pause timeout, repeated readings, idle tick, compact cleanup, and resume");
+    }
+
+    private static object CallResult(object target, string name, params object[] args) =>
+        target.GetType().GetMethod(name, Private)!.Invoke(target, args)!;
 
     private static void VerifyInGameSettings(HudWindow hud, FrameworkElement panel, double width)
     {
