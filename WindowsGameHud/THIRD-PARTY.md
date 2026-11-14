@@ -7,3 +7,4 @@
 - Mono.Posix.NETStandard 1.0.0 carries its [NuGet license terms](https://go.microsoft.com/fwlink/?linkid=869050). The Windows SDK projection is covered by [Microsoft's Windows SDK terms](https://aka.ms/WinSDKLicenseURL).
 - The self-contained .NET and WPF runtime includes Microsoft license and third-party notices. See [the .NET runtime source](https://github.com/dotnet/runtime) and [the WPF source](https://github.com/dotnet/wpf).
 - PawnIO is an optional download from its publisher. [Installer release and source](https://github.com/namazso/PawnIO.Setup/releases/tag/2.2.0), [driver source and license](https://github.com/namazso/PawnIO).
+- Velopack 1.2.161 provides the installer and updater under the MIT license. See [corresponding source and license](https://github.com/velopack/velopack/tree/1.2.161).

@@ -57,11 +57,22 @@ internal static class PlaybackMotion
 
     internal static void Arrive(FrameworkElement element, double offset, int milliseconds, double startOpacity = .5)
     {
-        if (!element.IsVisible || !SystemParameters.ClientAreaAnimation) return;
-        var translation = new TranslateTransform(offset, 0);
-        element.RenderTransform = translation;
-        translation.BeginAnimation(TranslateTransform.XProperty, To(offset, 0, milliseconds));
-        element.BeginAnimation(UIElement.OpacityProperty, To(startOpacity, 1, milliseconds));
+        var animate = element.IsVisible && SystemParameters.ClientAreaAnimation;
+        // A second track or tab change can arrive mid-transition. Continue from the
+        // visible position and opacity instead of jumping back to the entrance.
+        if (element.RenderTransform is not TranslateTransform translation || translation.IsFrozen)
+        {
+            translation = new TranslateTransform();
+            element.RenderTransform = translation;
+        }
+        // WPF keeps completed clocks attached with FillBehavior.Stop. Inspect the
+        // visible values so a stopped clock cannot suppress all later arrivals.
+        var from = Math.Abs(translation.X) > .001 ? translation.X : offset;
+        var opacity = element.Opacity < .999 ? element.Opacity : startOpacity;
+        translation.X = 0;
+        translation.BeginAnimation(TranslateTransform.XProperty, animate ? To(from, 0, milliseconds) : null);
+        element.Opacity = 1;
+        element.BeginAnimation(UIElement.OpacityProperty, animate ? To(opacity, 1, milliseconds) : null);
     }
 
     internal static void EaseTo(Animatable element, DependencyProperty property, double target, int milliseconds, bool animate)

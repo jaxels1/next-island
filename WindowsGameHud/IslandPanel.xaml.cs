@@ -18,7 +18,7 @@ namespace SapphireGameHud;
 
 public partial class IslandPanel : UserControl, IDisposable
 {
-    private enum View { Music, Tools, Shelf, Clipboard, Timer }
+    private enum View { Music, Shelf, Clipboard, Timer }
 
     private sealed record ShelfItem(string Path)
     {
@@ -36,7 +36,6 @@ public partial class IslandPanel : UserControl, IDisposable
     private readonly Action<bool> listenToClipboard;
     private readonly WindowsMedia media;
     private View view;
-    private double? desiredPanelHeight;
     private MediaReading reading = MediaReading.Empty;
     private long receivedAt;
     private (TrackDirection Direction, long Expires)? trackIntent;
@@ -51,6 +50,8 @@ public partial class IslandPanel : UserControl, IDisposable
     private double selectedDuration = 25 * 60;
     private long timerEndsAt;
     private bool timerCompleted;
+    private long copyFeedbackUntil;
+    private int mediaCommandVersion;
 
     internal IslandPanel(Action<bool> listenToClipboard, Action<MediaReading, PlaybackChange> compactMedia)
     {
@@ -62,6 +63,8 @@ public partial class IslandPanel : UserControl, IDisposable
         Clips.ItemsSource = clipboard;
         Files.SelectionChanged += (_, _) => RemoveFile.IsEnabled = Files.SelectedItem is ShelfItem;
         Clips.SelectionChanged += (_, _) => CopyClip.IsEnabled = Clips.SelectedItem is ClipboardEntry;
+        Loaded += (_, _) => UpdateSelection(false);
+        PanelBody.SizeChanged += (_, _) => ViewChanged?.Invoke();
         seekDebounce.Tick += async (_, _) =>
         {
             if (Mouse.LeftButton == MouseButtonState.Pressed && Seek.IsMouseCaptureWithin) return;
@@ -81,24 +84,31 @@ public partial class IslandPanel : UserControl, IDisposable
     {
         get
         {
-            if (desiredPanelHeight is double height) return height;
-            PanelBody.Measure(new Size(Width, double.PositiveInfinity));
-            height = Math.Ceiling(PanelBody.DesiredSize.Height);
-            desiredPanelHeight = height;
-            return height;
+            // Measure the control as a whole. Measuring only its child leaves the
+            // parent's desired size stale after navigation and can clip actions.
+            Measure(new Size(Width, double.PositiveInfinity));
+            // WPF already caches valid measurements. A separate cached height can
+            // outlive deferred template realization, font changes, or list updates.
+            return Math.Ceiling(DesiredSize.Height);
         }
+    }
+
+    internal void ResizeTo(double width)
+    {
+        if (Width == width) return;
+        Width = width;
+        OnViewChanged();
     }
 
     internal void FocusControls()
     {
         var firstControl = view switch
         {
-            View.Tools => ShelfChoice,
             View.Shelf => AddFile,
             View.Clipboard => (Control)ClipboardEnabled,
             View.Timer => TimerButton,
             _ when Toggle.IsEnabled => Toggle,
-            _ when OpenTools.Visibility == Visibility.Visible => OpenTools,
+            _ when Navigation.Visibility == Visibility.Visible => MusicTab,
             _ => this
         };
         firstControl.Focus();
@@ -110,37 +120,54 @@ public partial class IslandPanel : UserControl, IDisposable
     internal void SetGameMusicMode(bool enabled)
     {
         if (enabled) SelectMusic();
-        OpenTools.Visibility = enabled ? Visibility.Collapsed : Visibility.Visible;
+        Navigation.Visibility = enabled ? Visibility.Collapsed : Visibility.Visible;
+        ViewHost.MinHeight = enabled ? 0 : 164;
         OnViewChanged();
+    }
+
+    private void NavigationSizeChanged(object sender, SizeChangedEventArgs e) => UpdateSelection(false);
+
+    private void UpdateSelection(bool animate)
+    {
+        if (SelectionIndicator is null || Navigation.ActualWidth <= 0) return;
+        var slot = Navigation.ActualWidth / 4;
+        SelectionIndicator.Width = Math.Max(0, slot - 4);
+        PlaybackMotion.EaseTo(SelectionOffset, TranslateTransform.XProperty, (int)view * slot, 220,
+            animate && IsVisible && SystemParameters.ClientAreaAnimation);
     }
 
     private void Navigate(object sender, RoutedEventArgs e)
     {
-        if (sender is Button { Tag: string name } && Enum.TryParse<View>(name, out var destination))
-            ShowView(destination, moveFocus: true);
+        if (IsInitialized && sender is RadioButton { Tag: string name } && Enum.TryParse<View>(name, out var destination))
+            ShowView(destination);
     }
-
-    private void GoBack(object sender, RoutedEventArgs e) =>
-        ShowView(view == View.Tools ? View.Music : View.Tools, moveFocus: true);
 
     private void ShowView(View destination, bool moveFocus = false)
     {
         if (view == destination) return;
+        var direction = Math.Sign(destination - view);
         view = destination;
         MusicView.Visibility = ViewVisibility(View.Music);
-        ToolsView.Visibility = ViewVisibility(View.Tools);
         ShelfView.Visibility = ViewVisibility(View.Shelf);
         ClipboardView.Visibility = ViewVisibility(View.Clipboard);
         TimerView.Visibility = ViewVisibility(View.Timer);
-        ToolHeader.Visibility = view == View.Music ? Visibility.Collapsed : Visibility.Visible;
-        ViewTitle.Text = view == View.Shelf ? "File Shelf" : view.ToString();
+        MusicTab.IsChecked = view == View.Music;
+        ShelfTab.IsChecked = view == View.Shelf;
+        ClipboardTab.IsChecked = view == View.Clipboard;
+        TimerTab.IsChecked = view == View.Timer;
+        UpdateSelection(true);
+        var incoming = view switch
+        {
+            View.Shelf => ShelfView, View.Clipboard => ClipboardView, View.Timer => TimerView, _ => MusicView
+        };
+        PlaybackMotion.Arrive(incoming, direction * 5, 170, .65);
         OnViewChanged();
         if (moveFocus) FocusControls();
     }
 
     private void OnViewChanged()
     {
-        desiredPanelHeight = null;
+        InvalidateMeasure();
         ViewChanged?.Invoke();
     }
 
@@ -153,8 +180,11 @@ public partial class IslandPanel : UserControl, IDisposable
         var change = PlaybackMotion.Observe(reading, value, (now - receivedAt) / 1000d, direction,
             seeking || now <= seekIntentUntil || seekDebounce.IsEnabled || Seek.IsMouseCaptureWithin);
         if (PlaybackMotion.ReplacesTrack(change))
+        {
             trackIntent = null;
-        var oldHeightState = (reading.HasTrack, reading.Duration > 0);
+            mediaCommandVersion++;
+        }
+        var oldHeightState = (reading.HasTrack, reading.Duration > 0, ArtistName.Visibility, MusicStatus.Text);
         if (PlaybackMotion.ReplacesTrack(change) || change is PlaybackChange.Restarted or PlaybackChange.Resumed)
         {
             seekDebounce.Stop();
@@ -183,7 +213,8 @@ public partial class IslandPanel : UserControl, IDisposable
         if (change == PlaybackChange.Ended && value.HasTrack) MusicStatus.Text = "Playback ended";
         if (change != PlaybackChange.None) AnimatePlayback(change);
         UpdateProgress();
-        if (view == View.Music && oldHeightState != (value.HasTrack, value.Duration > 0)) OnViewChanged();
+        if (view == View.Music && oldHeightState != (value.HasTrack, value.Duration > 0, ArtistName.Visibility, MusicStatus.Text))
+            OnViewChanged();
         return change;
     }
 
@@ -233,7 +264,9 @@ public partial class IslandPanel : UserControl, IDisposable
 
     private async Task SendMediaCommand(string action, double seconds = 0)
     {
+        var command = ++mediaCommandVersion;
         MusicStatus.Text = "";
+        if (view == View.Music) OnViewChanged();
         var direction = action switch
         {
             "previous" => TrackDirection.Backward,
@@ -243,10 +276,11 @@ public partial class IslandPanel : UserControl, IDisposable
         var intent = (direction, Environment.TickCount64 + 2_000);
         if (direction != TrackDirection.None) trackIntent = intent;
         if (action == "seek") seekIntentUntil = intent.Item2;
-        if (!await media.Control(action, seconds))
+        if (!await media.Control(action, seconds) && command == mediaCommandVersion)
         {
             if (trackIntent == intent) trackIntent = null;
             MusicStatus.Text = action == "seek" ? "Couldn’t change playback position." : "This player didn’t respond.";
+            if (view == View.Music) OnViewChanged();
         }
     }
 
@@ -274,6 +308,11 @@ public partial class IslandPanel : UserControl, IDisposable
     {
         UpdateTimer();
         if (IsVisible) UpdateProgress();
+        if (copyFeedbackUntil != 0 && Environment.TickCount64 >= copyFeedbackUntil)
+        {
+            copyFeedbackUntil = 0;
+            CopyClip.Content = "Copy";
+        }
     }
 
     private void AddFiles(object sender, RoutedEventArgs e)
@@ -289,18 +328,36 @@ public partial class IslandPanel : UserControl, IDisposable
 
     internal void AddPaths(string[] paths)
     {
+        SetStatus(ShelfStatus, null);
+        var skipped = false;
         foreach (var path in paths)
         {
-            if (shelf.Count >= 32) break;
             if (shelf.Any(item => StringComparer.OrdinalIgnoreCase.Equals(item.Path, path))) continue;
+            if (shelf.Count >= 32) { skipped = true; break; }
             if (File.Exists(path) || Directory.Exists(path)) shelf.Add(new ShelfItem(path));
+            else skipped = true;
         }
-        ShelfEmpty.Visibility = shelf.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        RefreshShelf();
+        if (skipped) SetStatus(ShelfStatus, shelf.Count >= 32 ? "Shelf full. Remove a file to add another." : "Some files are no longer available.");
         ShowView(View.Shelf);
+    }
+
+    private void RefreshShelf()
+    {
+        ShelfEmpty.Visibility = shelf.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        ShelfCount.Text = shelf.Count == 1 ? "1 file" : $"{shelf.Count} files";
+    }
+
+    private void SetStatus(TextBlock target, string? message)
+    {
+        target.Text = message ?? "";
+        target.Visibility = string.IsNullOrEmpty(message) ? Visibility.Collapsed : Visibility.Visible;
+        OnViewChanged();
     }
 
     private void AddDroppedFiles(object sender, DragEventArgs e)
     {
+        DropSurface.BorderBrush = Brushes.Transparent;
         if (e.Data.GetData(DataFormats.FileDrop) is string[] paths) AddPaths(paths);
         e.Handled = true;
     }
@@ -309,13 +366,17 @@ public partial class IslandPanel : UserControl, IDisposable
     {
         e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop)
             ? e.AllowedEffects & (DragDropEffects.Copy | DragDropEffects.Link) : DragDropEffects.None;
+        DropSurface.BorderBrush = e.Effects != DragDropEffects.None ? (Brush)FindResource("Accent") : Brushes.Transparent;
         e.Handled = true;
     }
+
+    private void LeaveDropTarget(object sender, DragEventArgs e) => DropSurface.BorderBrush = Brushes.Transparent;
 
     private void RemoveSelectedFile(object sender, RoutedEventArgs e)
     {
         if (Files.SelectedItem is ShelfItem item) shelf.Remove(item);
-        ShelfEmpty.Visibility = shelf.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        SetStatus(ShelfStatus, null);
+        RefreshShelf();
     }
 
     private void OpenSelectedFile(object sender, MouseButtonEventArgs e)
@@ -323,16 +384,26 @@ public partial class IslandPanel : UserControl, IDisposable
 
     private void OpenSelectedFileWithKeyboard(object sender, KeyEventArgs e)
     {
-        if (e.Key != Key.Enter) return;
-        OpenSelectedFile();
+        if (e.Key == Key.Delete) RemoveSelectedFile(sender, e);
+        else if (e.Key == Key.Enter) OpenSelectedFile();
+        else return;
         e.Handled = true;
     }
 
     private void OpenSelectedFile()
     {
-        if (Files.SelectedItem is not ShelfItem item || !(File.Exists(item.Path) || Directory.Exists(item.Path))) return;
-        try { Process.Start(new ProcessStartInfo(item.Path) { UseShellExecute = true }); }
-        catch (System.ComponentModel.Win32Exception) { }
+        if (Files.SelectedItem is not ShelfItem item) return;
+        if (!(File.Exists(item.Path) || Directory.Exists(item.Path)))
+        {
+            SetStatus(ShelfStatus, "File missing. Remove it and add it again.");
+            return;
+        }
+        try
+        {
+            Process.Start(new ProcessStartInfo(item.Path) { UseShellExecute = true });
+            SetStatus(ShelfStatus, null);
+        }
+        catch (System.ComponentModel.Win32Exception) { SetStatus(ShelfStatus, "Couldn’t open this file. Try File Explorer."); }
     }
 
     private void StartFileDrag(object sender, MouseButtonEventArgs e) => fileDragOrigin = e.GetPosition(Files);
@@ -360,6 +431,7 @@ public partial class IslandPanel : UserControl, IDisposable
         var enabled = ClipboardEnabled.IsChecked == true;
         listenToClipboard(enabled);
         if (!enabled) clipboard.Clear();
+        SetStatus(ClipboardStatus, null);
         UpdateClipboardEmpty();
     }
 
@@ -383,19 +455,33 @@ public partial class IslandPanel : UserControl, IDisposable
     private void CopySelected(object sender, RoutedEventArgs e)
     {
         if (Clips.SelectedItem is not ClipboardEntry item) return;
-        try { Clipboard.SetText(item.Text); }
-        catch (ExternalException) { }
+        try
+        {
+            Clipboard.SetText(item.Text);
+            CopyClip.Content = "Copied";
+            copyFeedbackUntil = Environment.TickCount64 + 1800;
+            SetStatus(ClipboardStatus, null);
+        }
+        catch (ExternalException) { SetStatus(ClipboardStatus, "Clipboard busy. Try copying again."); }
+    }
+
+    private void CopyClipWithKeyboard(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter && !(e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control)) return;
+        CopySelected(sender, e);
+        e.Handled = true;
     }
 
     private void ClearClipboard(object sender, RoutedEventArgs e)
     {
         clipboard.Clear();
+        SetStatus(ClipboardStatus, null);
         UpdateClipboardEmpty();
     }
 
     private void UpdateClipboardEmpty()
     {
-        ClipboardEmpty.Text = ClipboardEnabled.IsChecked == true ? "Copy text to add it here" : "Clipboard history is off";
+        ClipboardEmpty.Text = ClipboardEnabled.IsChecked == true ? "Copy text to add it here." : "Turn on history to keep copied text here.";
         ClipboardEmpty.Visibility = clipboard.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         ClearClips.IsEnabled = clipboard.Count > 0;
     }
@@ -447,7 +533,11 @@ public partial class IslandPanel : UserControl, IDisposable
             }
         }
         TimerReadout.Text = timerCompleted ? "Time’s up" : FormatTime(Math.Ceiling(remaining), true);
-        TimerButton.Content = timerEndsAt != 0 ? "Pause timer" : "Start timer";
+        var paused = timerEndsAt == 0 && !timerCompleted && remaining < selectedDuration;
+        TimerButton.Content = timerEndsAt != 0 ? "Pause timer" : paused ? "Resume timer" : timerCompleted ? "Start again" : "Start timer";
+        TimerState.Text = timerCompleted ? "Finished" : timerEndsAt != 0 ? "Counting down" : paused ? "Paused" : "Ready";
+        TimerProgress.Value = Math.Clamp(remaining / selectedDuration, 0, 1);
+        TimerReset.IsEnabled = timerEndsAt != 0 || remaining < selectedDuration || timerCompleted;
         TimerMinutes.IsEnabled = timerEndsAt == 0;
     }
 

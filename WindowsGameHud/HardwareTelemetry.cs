@@ -8,7 +8,7 @@ using System.Runtime.InteropServices;
 
 namespace SapphireGameHud;
 
-internal readonly record struct UsageReading(double? Cpu, double? Gpu);
+internal readonly record struct UsageReading(double? Cpu, double? Gpu, double? Ram);
 internal readonly record struct TemperatureReading(double? Cpu, double? Gpu);
 
 internal sealed class HardwareTelemetry : IDisposable
@@ -20,7 +20,13 @@ internal sealed class HardwareTelemetry : IDisposable
     private const uint MoreData = 0x800007D2;
     private const uint FormatDouble = 0x00000200;
 
-    internal UsageReading Read() => new(ReadCpu(), ReadGpu());
+    internal UsageReading Read() => new(ReadCpu(), ReadGpu(), ReadRam());
+
+    private static double? ReadRam()
+    {
+        var status = new MemoryStatus { Length = (uint)Marshal.SizeOf<MemoryStatus>() };
+        return GlobalMemoryStatusEx(ref status) ? status.MemoryLoad : null;
+    }
 
     private double? ReadCpu()
     {
@@ -107,6 +113,16 @@ internal sealed class HardwareTelemetry : IDisposable
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    private struct MemoryStatus
+    {
+        internal uint Length;
+        internal uint MemoryLoad;
+        internal ulong TotalPhysical, AvailablePhysical;
+        internal ulong TotalPageFile, AvailablePageFile;
+        internal ulong TotalVirtual, AvailableVirtual, AvailableExtendedVirtual;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     private struct CounterItem
     {
         internal nint Name;
@@ -115,6 +131,7 @@ internal sealed class HardwareTelemetry : IDisposable
     }
 
     [DllImport("kernel32.dll")] private static extern bool GetSystemTimes(out FileTime idle, out FileTime kernel, out FileTime user);
+    [DllImport("kernel32.dll")] private static extern bool GlobalMemoryStatusEx(ref MemoryStatus status);
     [DllImport("pdh.dll", EntryPoint = "PdhOpenQueryW", CharSet = CharSet.Unicode)] private static extern uint PdhOpenQuery(string? source, nint data, out nint query);
     [DllImport("pdh.dll", EntryPoint = "PdhAddEnglishCounterW", CharSet = CharSet.Unicode)] private static extern uint PdhAddEnglishCounter(nint query, string path, nint data, out nint counter);
     [DllImport("pdh.dll")] private static extern uint PdhCollectQueryData(nint query);

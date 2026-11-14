@@ -1,0 +1,47 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+    <SolidColorBrush x:Key="IslandFill" Color="#0D0E11"/>
+    <SolidColorBrush x:Key="IslandRim" Color="#303239"/>
+    <SolidColorBrush x:Key="Ink" Color="#F5F5F7"/>
+    <SolidColorBrush x:Key="Muted" Color="#AEB3BD"/>
+    <SolidColorBrush x:Key="Accent" Color="#C7D6F6"/>
+    <SolidColorBrush x:Key="Recessed" Color="#1B1D23"/>
+    <SolidColorBrush x:Key="ControlFill" Color="#25272E"/>
+    <SolidColorBrush x:Key="ControlHover" Color="#32353E"/>
+    <SolidColorBrush x:Key="ControlPressed" Color="#414550"/>
+    <SolidColorBrush x:Key="TrackFill" Color="#393C46"/>
+    <FontFamily x:Key="IslandFont">Segoe UI Variable Text, Segoe UI</FontFamily>
+    <sys:Double x:Key="BodySize">13</sys:Double>
+    <sys:Double x:Key="SecondarySize">12</sys:Double>
+    <sys:Double x:Key="TitleSize">17</sys:Double>
+    <Thickness x:Key="PanelInsets">20,14,20,18</Thickness>
+    <Thickness x:Key="ControlInsets">12,8</Thickness>
+    <CornerRadius x:Key="ControlRadius">12</CornerRadius>
+    <CornerRadius x:Key="ArtworkRadius">10</CornerRadius>
+    <Geometry x:Key="MusicIcon">M5,11 C2,10 1,14 4,14 C6,14 7,13 7,11 L7,4 L13,2 L13,10 C12,8 9,9 9,11 C9,13 13,13 13,10</Geometry>
+    <Geometry x:Key="ShelfIcon">M1,8 L4,2 H12 L15,8 V14 H1 Z M1,8 H5 L6,10 H10 L11,8 H15</Geometry>
+    <Geometry x:Key="ClipboardIcon">M5,3 H3 V15 H13 V3 H11 M5,2 H11 V5 H5 Z M6,8 H10 M6,11 H10</Geometry>
+    <Geometry x:Key="TimerIcon">M8,4 A5.5,5.5 0 1 1 7.99,4 M6,1 H10 M8,1 V4 M8,7 V10 L10,11</Geometry>
+    <Geometry x:Key="FileIcon">M3,1 H9 L13,5 V15 H3 Z M9,1 V5 H13 M6,8 H10 M6,11 H10</Geometry>
+    <Geometry x:Key="PreviousSolid">M2,2 H4 V14 H2 Z M13,2 L5,8 L13,14 Z</Geometry>
+    <Geometry x:Key="NextSolid">M12,2 H14 V14 H12 Z M3,2 L11,8 L3,14 Z</Geometry>
+    <Geometry x:Key="PlaySolid">M4,2 L13,8 L4,14 Z</Geometry>
+    <Geometry x:Key="PauseSolid">M4,2 H7 V14 H4 Z M10,2 H13 V14 H10 Z</Geometry>
+    <Style TargetType="ToolTip">
+        <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+        <Setter Property="Background" Value="{StaticResource ControlFill}"/>
+        <Setter Property="FontFamily" Value="{StaticResource IslandFont}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Padding" Value="10,6"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToolTip">
+                    <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}" CornerRadius="8">
+                        <ContentPresenter/>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+</ResourceDictionary>

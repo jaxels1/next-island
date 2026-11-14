@@ -13,10 +13,14 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>NextIsland</AssemblyName>
     <Product>Next Island</Product>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
+    <StartupObject>SapphireGameHud.App</StartupObject>
     <RootNamespace>SapphireGameHud</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <ApplicationDefinition Remove="App.xaml" />
+    <Page Include="App.xaml" />
     <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
+    <PackageReference Include="Velopack" Version="1.2.161" />
   </ItemGroup>
 </Project>

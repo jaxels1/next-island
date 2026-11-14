@@ -17,6 +17,12 @@
           "System.Management": "10.0.2"
         }
       },
+      "Velopack": {
+        "type": "Direct",
+        "requested": "[1.2.161, )",
+        "resolved": "1.2.161",
+        "contentHash": "OpHNacIumnkhaaX3ZlQ/TCR4YPOJvud2/PAOoWb6o+mIrLwIVA275I5wAgt4q/1O2VrJeDwR1qFQyqzG4lUArg=="
+      },
       "BlackSharp.Core": {
         "type": "Transitive",
         "resolved": "1.0.7",

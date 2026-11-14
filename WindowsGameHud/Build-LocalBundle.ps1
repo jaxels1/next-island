@@ -30,6 +30,9 @@ $presentMon = Get-Asset 'PresentMon-2.5.1-x64.exe' `
     '9bec3083069f58f911e6a512f4806db51a27bd096103087bc1d05ef54c80a191'
 $presentMonLicense = Get-Asset 'PresentMon-LICENSE.txt' 'https://raw.githubusercontent.com/GameTechDev/PresentMon/v2.5.1/LICENSE.txt'
 $mplLicense = Get-Asset 'MPL-2.0.txt' 'https://raw.githubusercontent.com/LibreHardwareMonitor/LibreHardwareMonitor/v0.9.6/LICENSE'
+[xml] $projectXml = Get-Content -Raw -LiteralPath $project
+$velopackVersion = $projectXml.SelectSingleNode("//PackageReference[@Include='Velopack']").Version
+$velopackLicense = Get-Asset "Velopack-$velopackVersion-LICENSE.txt" "https://raw.githubusercontent.com/velopack/velopack/$velopackVersion/LICENSE"
 
 $intermediate = Join-Path $PSScriptRoot 'obj'
 New-Item -ItemType Directory -Force -Path $intermediate | Out-Null
@@ -43,6 +46,7 @@ $licenses = Join-Path $OutputDirectory 'Licenses'
 New-Item -ItemType Directory -Force -Path $providers, $licenses | Out-Null
 Copy-Item -LiteralPath $presentMon -Destination $providers -Force
 Copy-Item -LiteralPath $presentMonLicense, $mplLicense -Destination $licenses -Force
+Copy-Item -LiteralPath $velopackLicense -Destination (Join-Path $licenses 'Velopack-LICENSE.txt') -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../LICENSE'),
     (Join-Path $PSScriptRoot '../README.md'), (Join-Path $PSScriptRoot 'THIRD-PARTY.md') -Destination $OutputDirectory -Force
 

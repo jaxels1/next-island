@@ -157,13 +157,18 @@ internal static class Desktop
         return dx * dx + dy * dy <= radius * radius;
     }
 
-    internal static bool ClickedOutside(nint window, System.Windows.Rect bounds, double scale, double radius)
+    internal static bool ClickedOutside(nint window, System.Windows.Rect bounds, double scale, System.Windows.Media.Geometry? outline)
     {
         // Observe the current mouse-button state without taking capture from the target window.
         const int leftButton = 1;
         const int rightButton = 2;
-        return (GetAsyncKeyState(leftButton) < 0 || GetAsyncKeyState(rightButton) < 0)
-            && !CursorOver(window, bounds.Width * scale, bounds.Top * scale, bounds.Height * scale, radius * scale);
+        if (GetAsyncKeyState(leftButton) >= 0 && GetAsyncKeyState(rightButton) >= 0) return false;
+        if (outline is null || !GetCursorPos(out var cursor) || !GetWindowRect(window, out var frame)) return false;
+        var dpiScale = GetDpiForWindow(window) / 96d * scale;
+        if (dpiScale <= 0) return false;
+        var left = frame.Left + (frame.Width - bounds.Width * dpiScale) / 2;
+        return !outline.FillContains(new System.Windows.Point((cursor.X - left) / dpiScale,
+            (cursor.Y - frame.Top) / dpiScale - bounds.Top));
     }
 
     internal static double MonitorWidth(nint window, nint monitor)

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 using System;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -13,11 +14,19 @@ public sealed class PlaybackBars : FrameworkElement
     private readonly double[] bars = [.32, .32, .32, .32];
     private long startedAt;
     private bool playing;
+    public double Amplitude { get; set; } = .68;
 
     public PlaybackBars()
     {
         timer.Tick += (_, _) => UpdateBars();
         IsVisibleChanged += (_, _) => UpdateTimer();
+        Loaded += (_, _) => { SystemParameters.StaticPropertyChanged += PreferencesChanged; UpdateTimer(); };
+        Unloaded += (_, _) => { SystemParameters.StaticPropertyChanged -= PreferencesChanged; timer.Stop(); };
+    }
+
+    private void PreferencesChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(SystemParameters.ClientAreaAnimation)) UpdateTimer();
     }
 
     internal void SetPlaying(bool value)
@@ -51,7 +60,7 @@ public sealed class PlaybackBars : FrameworkElement
         for (var i = 0; i < bars.Length; i++)
         {
             var wave = .5 + .5 * Math.Sin(time * (8.5 + i * 1.6) + i * 1.7);
-            var target = playing ? .32 + .68 * wave : .32;
+            var target = playing ? .32 + Amplitude * wave : .32;
             bars[i] += (target - bars[i]) * .48;
         }
         InvalidateVisual();

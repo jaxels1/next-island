@@ -3,4 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              ShutdownMode="OnExplicitShutdown">
     <!-- Added 2026-11-12 for the local Windows gaming HUD. -->
+    <Application.Resources>
+        <ResourceDictionary Source="IslandTheme.xaml"/>
+    </Application.Resources>
 </Application>

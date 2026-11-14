@@ -23,12 +23,13 @@ public partial class HudWindow : Window
     private enum DisplayMode { Automatic, Always, Hidden, Preview }
     private enum IslandShape { Rest, Pill, Panel, Game, GameMusic }
 
-    private const double CompactWidth = 180;
+    private const double CompactMinWidth = 176;
+    private const double CompactMaxWidth = 280;
     private const double MaxGameWidth = 960;
-    private const double WindowWidth = 976;
-    private const double WindowHeight = 264;
-    private const double PanelWidth = 344;
-    private const double PillHeight = 32;
+    private const double WindowWidth = 1130;
+    private const double WindowHeight = 300;
+    private const double PanelWidth = 384;
+    private const double PillHeight = 38;
     private const double GameTrackWidth = 154;
     private const double GameGap = 7;
     private const int HoverIntentMs = 150;
@@ -78,7 +79,9 @@ public partial class HudWindow : Window
     private bool gameMusicOpen;
     private nint gameWindow;
     private Rect visibleBounds;
-    private double visibleRadius;
+    private Geometry? visibleOutline;
+    private double compactWidth = CompactMinWidth;
+    private double musicSlotWidth = GameTrackWidth;
     private DisplayMode mode;
     private ForegroundWindow foreground;
     private ForegroundWindow pendingForeground;
@@ -91,7 +94,8 @@ public partial class HudWindow : Window
     private TimeSpan? lastRenderTime;
     private double displayScale = 1;
     private double gameWidth = 760;
-    private double GameHeight => games.LargeText ? 32 : 26;
+    private bool wrapTelemetry;
+    private double GameHeight => (games.LargeText ? 32 : 26) * (wrapTelemetry ? 2 : 1);
     private bool focusPanelOnOpen;
     private bool live;
     private bool shuttingDown;
@@ -146,6 +150,14 @@ public partial class HudWindow : Window
             new Forms.ToolStripMenuItem("Choose PresentMon…", null, (_, _) => ChoosePresentMon()), sensorSetup]);
         menu.Items.Add(settings);
         menu.Items.Add(new Forms.ToolStripSeparator());
+        if (Application.Current is App { CanUpdate: true } app)
+        {
+            menu.Items.Add("Check for updates", null, async (_, _) =>
+            {
+                var message = await app.CheckForUpdates();
+                if (!shuttingDown) tray?.ShowBalloonTip(4000, Title, message, Forms.ToolTipIcon.Info);
+            });
+        }
         menu.Items.Add("Exit", null, (_, _) => Application.Current.Shutdown());
         tray = new Forms.NotifyIcon
         {
@@ -265,7 +277,7 @@ public partial class HudWindow : Window
         if (mode == DisplayMode.Preview)
         {
             ShowFrames(new FrameReading(144, 6.9, PreviewHistory));
-            ShowUsage(new UsageReading(34, 86));
+            ShowUsage(new UsageReading(34, 86, 62));
             ShowTemperatures(new TemperatureReading(61, 72));
         }
         else if (live)
@@ -282,16 +294,46 @@ public partial class HudWindow : Window
     private void Position()
     {
         if (source is null) return;
-        var available = Desktop.MonitorWidth(source.Handle, foreground.Monitor);
+        ApplyDisplayWidth(Desktop.MonitorWidth(source.Handle, foreground.Monitor));
+        Desktop.CenterAtTop(source.Handle, foreground.Monitor);
+    }
+
+    private void ApplyDisplayWidth(double available)
+    {
         var previousWidth = gameWidth;
         var previousHeight = TelemetryContent.Height;
-        gameWidth = available > 0 ? Math.Max(games.LargeText ? 640 : 560, GameWidthFor(available)) : 760;
+        var previousSlot = musicSlotWidth;
+        if (available <= 0) available = WindowWidth;
+        var usable = Math.Max(1, available - 16);
+        var panelWidth = Math.Min(PanelWidth, Math.Max(328, usable - 16));
+        panel?.ResizeTo(panelWidth);
+        var minimumSingleRow = games.LargeText ? 650 : 560;
+        if (mode == DisplayMode.Preview) minimumSingleRow += 40;
+        gameWidth = Math.Min(Math.Max(400, usable), Math.Max(minimumSingleRow, GameWidthFor(available)));
+        musicSlotWidth = Math.Min(GameTrackWidth, Math.Max(0, usable - gameWidth));
+        if (musicSlotWidth < 48) musicSlotWidth = 0;
+        wrapTelemetry = gameWidth < minimumSingleRow;
+        SecondaryMetricsRow.Height = wrapTelemetry ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+        // On the two-row layout, CPU and GPU each use half the metrics area.
+        FpsColumn.Width = new GridLength(wrapTelemetry ? .98 : .85, GridUnitType.Star);
+        FrameColumn.Width = new GridLength(wrapTelemetry ? 1.02 : 1.15, GridUnitType.Star);
+        CpuColumn.Width = new GridLength(wrapTelemetry ? .83 : 1.4, GridUnitType.Star);
+        GpuColumn.Width = new GridLength(wrapTelemetry ? .82 : 1.4, GridUnitType.Star);
+        RamColumn.Width = new GridLength(wrapTelemetry ? .35 : .95, GridUnitType.Star);
+        Grid.SetRow(CpuGroup, wrapTelemetry ? 1 : 0);
+        Grid.SetColumn(CpuGroup, wrapTelemetry ? 0 : 2);
+        Grid.SetColumnSpan(CpuGroup, wrapTelemetry ? 2 : 1);
+        Grid.SetRow(GpuGroup, wrapTelemetry ? 1 : 0);
+        Grid.SetColumn(GpuGroup, wrapTelemetry ? 2 : 3);
+        Grid.SetColumnSpan(GpuGroup, wrapTelemetry ? 3 : 1);
+        Grid.SetColumnSpan(FrameGroup, wrapTelemetry ? 2 : 1);
+        Grid.SetColumn(RamGroup, wrapTelemetry ? 3 : 4);
+        Grid.SetColumnSpan(RamGroup, wrapTelemetry ? 2 : 1);
         TelemetryContent.Height = GameHeight;
         TextElement.SetFontSize(TelemetryContent, games.LargeText ? 16 : 13);
-        Graph.Visibility = games.ShowGraph && gameWidth >= (games.LargeText ? 740 : 640) ? Visibility.Visible : Visibility.Collapsed;
-        var stageWidth = Math.Max(PanelWidth + 16, Math.Min(available > 0 ? available : WindowWidth,
-            gameWidth + GameTrackWidth + 16));
-        var scale = available > 0 ? Math.Min(1, available / stageWidth) : 1;
+        Graph.Visibility = games.ShowGraph && gameWidth >= minimumSingleRow + 96 ? Visibility.Visible : Visibility.Collapsed;
+        var stageWidth = Math.Max(panelWidth, gameWidth + musicSlotWidth) + 16;
+        var scale = Math.Min(1, available / stageWidth);
         if (Math.Abs(Scene.Width - stageWidth) > 0.001 || Math.Abs(scale - displayScale) > 0.001)
         {
             displayScale = scale;
@@ -301,8 +343,7 @@ public partial class HudWindow : Window
             Scene.LayoutTransform = scale == 1 ? Transform.Identity : new ScaleTransform(scale, scale);
             DrawMorph(width.Value, height.Value, emergence.Value);
         }
-        if (IsGameShape && (previousWidth != gameWidth || previousHeight != GameHeight)) StartMorph();
-        Desktop.CenterAtTop(source.Handle, foreground.Monitor);
+        if (IsGameShape && (previousWidth != gameWidth || previousHeight != GameHeight || previousSlot != musicSlotWidth)) StartMorph();
     }
 
     internal static double GameWidthFor(double monitorWidth) => Math.Clamp(Math.Round(monitorWidth * .4), 560, MaxGameWidth);
@@ -312,7 +353,21 @@ public partial class HudWindow : Window
         var timerText = now < timerPeekUntil ? "Time’s up"
             : now < mediaPeekUntil ? null : panel?.CompactTimerText;
         var notice = now < mediaPeekUntil ? playbackNotice : null;
-        CompactTitle.Text = timerText ?? notice ?? (currentMedia.HasTrack ? currentMedia.Title : "Sapphire");
+        var title = timerText ?? notice ?? (currentMedia.HasTrack ? currentMedia.Title : "Next Island");
+        if (CompactTitle.Text != title)
+        {
+            CompactTitle.Text = title;
+            var sample = title[..Math.Min(title.Length, 96)];
+            var measure = new FormattedText(sample, System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+                new Typeface(CompactTitle.FontFamily, CompactTitle.FontStyle, CompactTitle.FontWeight, CompactTitle.FontStretch),
+                CompactTitle.FontSize, Brushes.White, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+            var target = Math.Clamp(Math.Ceiling(measure.Width + 83), CompactMinWidth, CompactMaxWidth);
+            if (target != compactWidth)
+            {
+                compactWidth = target;
+                if (shape == IslandShape.Pill) StartMorph();
+            }
+        }
         var playing = timerText is null && currentMedia.Playing;
         CompactArt.Visibility = timerText is null && (currentMedia.Artwork is not null || notice == "Playback ended" && CompactArt.Fill is not null)
             ? Visibility.Visible : Visibility.Collapsed;
@@ -373,7 +428,7 @@ public partial class HudWindow : Window
             GameArt.Visibility = reading.Artwork is null ? Visibility.Collapsed : Visibility.Visible;
         }
         GamePlayback.SetPlaying(reading.Playing);
-        if (IsGameShape && change != PlaybackChange.None && reading.HasTrack)
+        if (IsGameShape && PlaybackMotion.ReplacesTrack(change) && reading.HasTrack)
             PlaybackMotion.Arrive(GameTrackTitle, PlaybackMotion.Offset(change, 6), 170);
         if (IsGameShape) UpdateGameTrack();
         RefreshCompact(now);
@@ -468,7 +523,7 @@ public partial class HudWindow : Window
         if (gameMusicOpen && (live || mode == DisplayMode.Preview))
         {
             if (panel?.HoldsOpen != true && visibleBounds.Height > GameHeight + 10 &&
-                Desktop.ClickedOutside(source.Handle, visibleBounds, displayScale, visibleRadius)) DismissPanel();
+                Desktop.ClickedOutside(source.Handle, visibleBounds, displayScale, visibleOutline)) DismissPanel();
             return;
         }
         if (mode == DisplayMode.Hidden || live || mode == DisplayMode.Preview)
@@ -484,15 +539,15 @@ public partial class HudWindow : Window
         if (panelPinned)
         {
             if (panel?.HoldsOpen != true && visibleBounds.Height > 32 &&
-                Desktop.ClickedOutside(source.Handle, visibleBounds, displayScale, visibleRadius)) DismissPanel();
+                Desktop.ClickedOutside(source.Handle, visibleBounds, displayScale, visibleOutline)) DismissPanel();
             return;
         }
-        var overEdge = Desktop.CursorOver(source.Handle, CompactWidth * displayScale, 0,
-            (shape == IslandShape.Pill ? 16 : 10) * displayScale);
+        var overEdge = Desktop.CursorOver(source.Handle, CompactMinWidth * displayScale, 0,
+            (shape == IslandShape.Pill ? 23 : 10) * displayScale);
         // The pointer can catch the surface during retraction and reverse the spring.
         var overIsland = (animatingMorph || shape is IslandShape.Pill or IslandShape.Panel) && visibleBounds.Height > 1
             && Desktop.CursorOver(source.Handle, visibleBounds.Width * displayScale,
-                visibleBounds.Top * displayScale, visibleBounds.Height * displayScale, visibleRadius * displayScale);
+                visibleBounds.Top * displayScale, visibleBounds.Height * displayScale);
         UpdateHoverShape(now, overEdge || overIsland);
     }
 
@@ -570,10 +625,10 @@ public partial class HudWindow : Window
 
     private (double Width, double Height) ShapeSize(IslandShape value) => value switch
     {
-        IslandShape.Panel => (PanelWidth, panel?.DesiredPanelHeight ?? 168),
-        IslandShape.Game => (gameWidth + (showGameTrack ? GameTrackWidth : 0), GameHeight),
-        IslandShape.GameMusic => (gameWidth + (showGameTrack ? GameTrackWidth : 0), GameHeight + (panel?.DesiredPanelHeight ?? 168)),
-        IslandShape.Pill => (CompactWidth, PillHeight),
+        IslandShape.Panel => (panel?.Width ?? PanelWidth, panel?.DesiredPanelHeight ?? 168),
+        IslandShape.Game => (gameWidth + (showGameTrack ? musicSlotWidth : 0), GameHeight),
+        IslandShape.GameMusic => (gameWidth + (showGameTrack ? musicSlotWidth : 0), GameHeight + (panel?.DesiredPanelHeight ?? 168)),
+        IslandShape.Pill => (compactWidth, PillHeight),
         _ => (100, 0)
     };
 
@@ -586,7 +641,12 @@ public partial class HudWindow : Window
 
         var (targetWidth, targetHeight) = ShapeSize(shape);
         var reducedMotion = !SystemParameters.ClientAreaAnimation;
-        var frequency = shape == IslandShape.Rest ? 31d : 25d;
+        var frequency = shape switch
+        {
+            IslandShape.Rest => 32d,
+            IslandShape.Panel or IslandShape.GameMusic => 22d,
+            _ => 26d
+        };
         var widthDone = width.Advance(targetWidth, dt, frequency, 0.35, reducedMotion);
         var heightDone = height.Advance(targetHeight, dt, frequency, 0.35, reducedMotion);
         var emergenceDone = emergence.Advance(shape == IslandShape.Rest ? 0 : 1, dt, frequency, 0.002, reducedMotion);
@@ -611,28 +671,32 @@ public partial class HudWindow : Window
         var music = Math.Clamp(musicProgress.Value, 0, 1);
         var top = (9 + (GameGap - 9) * game) * Ease(0.04, 0.90, reveal);
         var neck = Ease(0.06, 0.30, reveal) * (1 - Ease(0.55, 0.88, reveal));
-        var radius = Math.Min(bodyHeight / 2, 16 + 8 * Ease(50, 168, bodyHeight));
+        var radius = Math.Min(bodyHeight / 2, 19 + 7 * Ease(50, 150, bodyHeight));
         visibleBounds = new Rect((Scene.Width - bodyWidth) / 2, top, bodyWidth, bodyHeight);
-        visibleRadius = radius;
-        Membrane.SetShape(visibleBounds, radius, neck, music * game, GameHeight, game);
+        var musicWidth = musicSlotWidth * music;
+        var outline = IslandSurface.CreateBody(bodyWidth, bodyHeight, radius, game, GameHeight, panel?.Width ?? PanelWidth);
+        visibleOutline = outline;
+        Membrane.SetShape(visibleBounds, outline, neck, music * game, GameHeight, musicWidth);
 
         Island.Width = bodyWidth;
         Island.Height = bodyHeight;
         Canvas.SetLeft(Island, visibleBounds.X);
         Canvas.SetTop(Island, top);
-        Island.Clip = new RectangleGeometry(new Rect(0, 0, bodyWidth, bodyHeight), radius, radius);
-        var compact = Ease(0.25, 0.79, reveal) * (1 - Ease(187, 260, bodyWidth)) * (1 - Ease(34, 90, bodyHeight));
+        Island.Clip = outline;
+        var compact = Ease(0.25, 0.79, reveal) * Ease(24, 36, bodyHeight)
+            * (1 - Ease(40, 83, bodyHeight)) * (1 - Ease(.05, .55, game));
         var telemetry = Ease(gameWidth * .74, gameWidth * .97, bodyWidth) * Ease(0.42, 0.92, game);
-        var panelAlpha = Ease(45, 122, bodyHeight) * Ease(216, 326, bodyWidth);
+        var panelAlpha = Ease(32, 108, bodyHeight - GameHeight * game) * Ease(216, 326, bodyWidth);
 
         CompactContent.Opacity = compact;
+        CompactContent.Width = Math.Min(compactWidth, bodyWidth);
         CompactContent.Visibility = compact > 0 ? Visibility.Visible : Visibility.Collapsed;
         CompactContent.IsHitTestVisible = shape == IslandShape.Pill && compact > .45;
         TelemetryContent.Opacity = telemetry;
         TelemetryContent.Visibility = telemetry > 0 ? Visibility.Visible : Visibility.Collapsed;
-        var musicWidth = Math.Min(GameTrackWidth * music, Math.Max(0, Scene.Width - gameWidth - 4));
         TelemetryContent.Width = gameWidth + musicWidth;
         MusicColumn.Width = new GridLength(musicWidth);
+        GameTrack.Width = Math.Max(0, musicSlotWidth);
         GameTrack.Opacity = Ease(.20, .88, music);
         GameTrack.Visibility = music > .02 ? Visibility.Visible : Visibility.Collapsed;
         PanelViewport.Margin = new Thickness(0, GameHeight * game, 0, 0);
@@ -764,21 +828,28 @@ public partial class HudWindow : Window
     private void ShowFrames(FrameReading? reading)
     {
         Fps.Text = Format(reading?.FramesPerSecond, "0", "");
-        FrameTime.Text = Format(reading?.Milliseconds, "0.0", " ms");
+        SetMetric(FrameTimeNumber, FrameTimeUnit, reading?.Milliseconds, "0.0", " ms");
         if (games.ShowGraph) Graph.SetSamples(reading?.History ?? Array.Empty<double>());
     }
 
     private void ShowUsage(UsageReading reading)
     {
-        Cpu.Text = Format(reading.Cpu, "0", "%");
-        Gpu.Text = Format(reading.Gpu, "0", "%");
+        SetMetric(CpuNumber, CpuUnit, reading.Cpu, "0", "%");
+        SetMetric(GpuNumber, GpuUnit, reading.Gpu, "0", "%");
+        SetMetric(RamNumber, RamUnit, reading.Ram, "0", "%");
     }
 
     private void ShowTemperatures(TemperatureReading reading)
     {
         temperatures = reading;
-        CpuTemp.Text = Format(reading.Cpu, "0", "°C");
-        GpuTemp.Text = Format(reading.Gpu, "0", "°C");
+        SetMetric(CpuTempNumber, CpuTempUnit, reading.Cpu, "0", "°C");
+        SetMetric(GpuTempNumber, GpuTempUnit, reading.Gpu, "0", "°C");
+    }
+
+    private static void SetMetric(Run number, Run unit, double? value, string precision, string suffix)
+    {
+        number.Text = Format(value, precision, "");
+        unit.Text = value.HasValue ? suffix : "";
     }
 
     private static string Format(double? number, string precision, string unit) =>

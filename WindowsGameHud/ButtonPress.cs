@@ -31,7 +31,7 @@ public static class ButtonPress
         var pressed = (bool)args.NewValue;
         var animate = visual.IsVisible && SystemParameters.ClientAreaAnimation;
         var target = pressed && animate ? GetScale(visual) : 1;
-        var duration = pressed ? 75 : 155;
+        var duration = pressed ? 100 : 120;
         PlaybackMotion.EaseTo(scale, ScaleTransform.ScaleXProperty, target, duration, animate);
         PlaybackMotion.EaseTo(scale, ScaleTransform.ScaleYProperty, target, duration, animate);
     }
