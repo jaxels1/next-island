@@ -1,6 +1,11 @@
 name: Windows release
 
 on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build and publish
+        required: true
   push:
     tags:
       - 'v*'
@@ -12,10 +17,13 @@ jobs:
   release:
     if: github.repository == 'jaxels1/next-island'
     runs-on: windows-latest
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
@@ -23,7 +31,7 @@ jobs:
         shell: pwsh
         run: |
           $output = Join-Path $env:RUNNER_TEMP 'next-island-release'
-          ./WindowsGameHud/Build-Installer.ps1 -OutputDirectory $output -ExpectedTag $env:GITHUB_REF_NAME
+          ./WindowsGameHud/Build-Installer.ps1 -OutputDirectory $output -ExpectedTag $env:RELEASE_TAG
       - name: Verify package and install on the runner
         shell: pwsh
         run: |
@@ -31,7 +39,7 @@ jobs:
           $setup = Join-Path $output 'NextIsland-win-Setup.exe'
           $install = Join-Path $env:RUNNER_TEMP 'next-island-installed'
           $feed = Get-Content -Raw -LiteralPath (Join-Path $output 'releases.win.json') | ConvertFrom-Json
-          $asset = @($feed.Assets | Where-Object { $_.Type -eq 'Full' -and "v$($_.Version)" -eq $env:GITHUB_REF_NAME })
+          $asset = @($feed.Assets | Where-Object { $_.Type -eq 'Full' -and "v$($_.Version)" -eq $env:RELEASE_TAG })
           if ($asset.Count -ne 1) { throw 'Expected one full update for this tag.' }
           $package = Get-Item -LiteralPath (Join-Path $output $asset[0].FileName)
           if ($package.Length -ne $asset[0].Size -or (Get-FileHash -LiteralPath $package.FullName).Hash -ne $asset[0].SHA256) {
@@ -52,9 +60,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $output = Join-Path $env:RUNNER_TEMP 'next-island-release'
-          $version = $env:GITHUB_REF_NAME.Substring(1)
+          $version = $env:RELEASE_TAG.Substring(1)
           $installer = Join-Path $output 'NextIsland-win-Setup.exe'
           $package = Join-Path $output "NextIsland-$version-full.nupkg"
           $feed = Join-Path $output 'releases.win.json'
-          gh release create $env:GITHUB_REF_NAME $installer $package $feed --verify-tag --title "Next Island $env:GITHUB_REF_NAME" --generate-notes
+          gh release create $env:RELEASE_TAG $installer $package $feed --verify-tag --title "Next Island $env:RELEASE_TAG" --generate-notes
           if ($LASTEXITCODE -ne 0) { throw 'GitHub release publication failed.' }
