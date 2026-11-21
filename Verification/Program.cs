@@ -74,6 +74,7 @@ internal static class Program
                 var panel = Field<FrameworkElement>(hud, "panel");
                 var sample = NewTrack();
                 VerifyGameTarget(hud);
+                VerifyRobloxLatency();
                 panel.GetType().GetMethod("UpdateMedia", Private)!.Invoke(panel, [sample]);
                 VerifyPlaybackMotion(sample);
                 var now = Environment.TickCount64;
@@ -187,6 +188,7 @@ internal static class Program
                 VerifyRefinements(hud, panel, sample);
                 VerifyRepeatedMotion(scene);
                 VerifyPolishedInteractions(hud, panel);
+                VerifyUpgrades(hud, panel, sample);
                 Save(args[0], strip, controls, game, gameWithMusic, gameControls);
                 Console.WriteLine($"PASS: rest, hover intent, compact hover, explicit panel, alerts, click-through, widths at 768p through 4K, longest readings, music panel {panelHeight:0} DIPs");
             }
@@ -620,6 +622,7 @@ internal static class Program
         Write(hud, "gameWidth", width);
         telemetry.Width = width;
         telemetry.Height = height;
+        Field<FrameworkElement>(hud, "ServerLatency").Visibility = Visibility.Collapsed;
         System.Windows.Documents.TextElement.SetFontSize(telemetry, fontSize);
         Field<System.Windows.Controls.TextBlock>(hud, "Fps").Text = "9999";
         Field<System.Windows.Documents.Run>(hud, "FrameTimeNumber").Text = "999.9";
@@ -627,6 +630,20 @@ internal static class Program
         foreach (var name in new[] { "CpuTemp", "GpuTemp" }) Field<System.Windows.Documents.Run>(hud, name + "Number").Text = "100";
         Settle(hud, width, height, 1, 1);
         VerifyMetricBounds(hud);
+    }
+
+    private static void VerifyRobloxLatency()
+    {
+        const string prefix = "2026-11-18T02:45:35.476Z,680.476440,25a0,6,Info [DFLog::NetworkClient] ";
+        var reader = typeof(HudWindow).Assembly.GetType("SapphireGameHud.RobloxServerLatency")!
+            .GetMethod("ReadEndpoint", BindingFlags.Static | BindingFlags.NonPublic)!;
+        string? Parse(string log) => reader.Invoke(null, [log, null])?.ToString();
+        var connected = prefix + "Connection accepted from 203.0.113.7|63908\r\n";
+        Require(Parse(connected) == "203.0.113.7", "Read the actual accepted Roblox endpoint");
+        Require(Parse(connected + prefix + "Client:Disconnect\r\n") is null, "Clear the endpoint on disconnect");
+        Require(Parse(connected + prefix + "Connection accepted from 192.168.1.1|63908") is null, "Ignore local targets");
+        Require(Parse("2026-11-18 [FLog::CreatorOutput] Connection accepted from 203.0.113.7|63908") is null,
+            "Ignore game console output");
     }
 
     private static void VerifyRamReading(HudWindow hud)
@@ -648,10 +665,11 @@ internal static class Program
     private static void VerifyMetricBounds(HudWindow hud)
     {
         var telemetry = Field<System.Windows.Controls.Border>(hud, "TelemetryContent");
-        foreach (var name in new[] { "Fps", "FrameTime", "Cpu", "Gpu", "CpuTemp", "GpuTemp", "Ram" })
+        foreach (var name in new[] { "Fps", "FrameTime", "Cpu", "Gpu", "CpuTemp", "GpuTemp", "Ram", "ServerLatencyValue" })
         {
             var value = Field<System.Windows.Controls.TextBlock>(hud, name);
             var group = (System.Windows.Controls.StackPanel)value.Parent;
+            if (group.Visibility == Visibility.Collapsed) continue;
             var groupBounds = group.TransformToAncestor(telemetry).TransformBounds(new Rect(group.RenderSize));
             var grid = (System.Windows.Controls.Grid)group.Parent;
             var col = System.Windows.Controls.Grid.GetColumn(group);
@@ -731,6 +749,74 @@ internal static class Program
         }
         finally { host.Children.Remove(transformTarget); }
         Console.WriteLine("PASS: interrupted view crossfades clean up, do not block input, and switch motion reverses continuously");
+    }
+
+    private static void VerifyUpgrades(HudWindow hud, FrameworkElement panel, object sample)
+    {
+        var assembly = typeof(HudWindow).Assembly;
+        var palette = assembly.GetType("SapphireGameHud.ArtworkPalette")!;
+        var defaultAccent = (Color)palette.GetField("DefaultAccent", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
+        var art = sample.GetType().GetProperty("Artwork")!.GetValue(sample);
+        var extracted = (Color)palette.GetMethod("ExtractAccent", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, [art])!;
+        Require(extracted != defaultAccent, "Artwork accent extraction produces a vibrant tint");
+        var sourceApp = (string?)palette.GetMethod("FormatSourceApp", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, ["Spotify.exe"]);
+        Require(sourceApp == "Spotify", "Recognize media source app name");
+
+        Call(panel, "ResetTimer", panel, new RoutedEventArgs());
+        Call(panel, "ToggleTimer", panel, new RoutedEventArgs());
+        Call(panel, "AddTimerMinute", panel, new RoutedEventArgs());
+        Require(Field<double>(panel, "remaining") > 25 * 60, "Timer +1 min extends active countdown");
+        var timerProgress = (double)panel.GetType().GetProperty("CompactTimerProgress", Private)!.GetValue(panel)!;
+        Require(timerProgress is > 0 and <= 1, "Compact timer progress tracks active countdown");
+        Call(panel, "ResetTimer", panel, new RoutedEventArgs());
+
+        var viewType = panel.GetType().GetNestedType("View", BindingFlags.NonPublic)!;
+        var clips = Field<System.Windows.Controls.ListBox>(panel, "Clips");
+        var clipEnable = Field<System.Windows.Controls.CheckBox>(panel, "ClipboardEnabled");
+        var clipFilter = Field<System.Windows.Controls.TextBox>(panel, "ClipFilter");
+        var pinButton = Field<System.Windows.Controls.Button>(panel, "PinClip");
+        var entryType = panel.GetType().GetNestedType("ClipboardEntry", BindingFlags.NonPublic)!;
+        var list = Field<System.Collections.IList>(panel, "clipboard");
+        clipEnable.IsChecked = true;
+        list.Add(Activator.CreateInstance(entryType, ["First pin target", DateTimeOffset.UtcNow, false])!);
+        list.Add(Activator.CreateInstance(entryType, ["Second item", DateTimeOffset.UtcNow, false])!);
+        Call(panel, "RefreshClipboardView");
+        clips.SelectedIndex = 1;
+        pinButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+        Call(panel, "RefreshClipboardView");
+        var first = clips.Items[0]!;
+        Require((bool)entryType.GetProperty("Pinned")!.GetValue(first)! && entryType.GetProperty("Label")!.GetValue(first)!.ToString() == "Second item",
+            "Pinned clipboard entry moves to the top");
+        clipFilter.Text = "Second";
+        Require(clips.Items.Count == 1, "Clipboard filter narrows visible entries");
+        clipFilter.Text = "";
+        Require(clips.Items.Count == 2, "Clearing clipboard filter restores entries");
+        Call(panel, "SetStatus", Field<System.Windows.Controls.TextBlock>(panel, "ClipboardStatus"), "Clipboard busy. Try copying again.");
+        Call(panel, "ShowView", Enum.Parse(viewType, "Clipboard"), false);
+        foreach (var width in new[] { 328d, 384d })
+        {
+            Call(panel, "ResizeTo", width);
+            var height = (double)panel.GetType().GetProperty("DesiredPanelHeight", Private)!.GetValue(panel)!;
+            Require(height <= 288, $"Clipboard filter + error fits inside {width} DIPs (got {height})");
+        }
+        Call(panel, "SetStatus", Field<System.Windows.Controls.TextBlock>(panel, "ClipboardStatus"), null!);
+        clipEnable.IsChecked = false;
+        Call(panel, "ResizeTo", 384d);
+        Call(panel, "ShowView", Enum.Parse(viewType, "Music"), false);
+
+        var tempReadingType = assembly.GetType("SapphireGameHud.TemperatureReading")!;
+        Call(hud, "ShowTemperatures", Activator.CreateInstance(tempReadingType, [88d, 78d])!);
+        Require(Equals(Field<System.Windows.Documents.Run>(hud, "CpuTempNumber").Foreground, hud.FindResource("MetricHot")),
+            "Hot CPU temperature uses MetricHot");
+        Require(Equals(Field<System.Windows.Documents.Run>(hud, "GpuTempNumber").Foreground, hud.FindResource("MetricWarn")),
+            "Warm GPU temperature uses MetricWarn");
+        Call(hud, "SetLatencyReading", (double?)145d);
+        Require(Equals(Field<System.Windows.Documents.Run>(hud, "ServerLatencyNumber").Foreground, hud.FindResource("MetricHot")),
+            "High latency uses MetricHot");
+        Call(hud, "SetLatencyReading", (double?)32d);
+        Require(Equals(Field<System.Windows.Documents.Run>(hud, "ServerLatencyNumber").Foreground, hud.FindResource("MetricGood")),
+            "Low latency uses MetricGood");
+        Console.WriteLine("PASS: artwork palette, timer +1m, clipboard pin/filter, and semantic telemetry thresholds");
     }
 
     private static bool IsTransparent(BitmapSource image)

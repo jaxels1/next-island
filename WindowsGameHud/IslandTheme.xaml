@@ -12,6 +12,9 @@
     <SolidColorBrush x:Key="ControlHover" Color="#34363D"/>
     <SolidColorBrush x:Key="ControlPressed" Color="#3D4048"/>
     <SolidColorBrush x:Key="TrackFill" Color="#393C46"/>
+    <SolidColorBrush x:Key="MetricGood" Color="#8BE8B7"/>
+    <SolidColorBrush x:Key="MetricWarn" Color="#F5C76B"/>
+    <SolidColorBrush x:Key="MetricHot" Color="#F57C7C"/>
     <FontFamily x:Key="IslandFont">Segoe UI Variable Text, Segoe UI</FontFamily>
     <sys:Double x:Key="BodySize">13</sys:Double>
     <sys:Double x:Key="SecondarySize">12</sys:Double>
@@ -30,6 +33,13 @@
     <Geometry x:Key="NextSolid">M12,2 H14 V14 H12 Z M3,2 L11,8 L3,14 Z</Geometry>
     <Geometry x:Key="PlaySolid">M4,2 L13,8 L4,14 Z</Geometry>
     <Geometry x:Key="PauseSolid">M4,2 H7 V14 H4 Z M10,2 H13 V14 H10 Z</Geometry>
+    <Geometry x:Key="VolumeHighIcon">M2,6 H5 L9,2.5 V13.5 L5,10 H2 Z M11.5,5.5 A3.5,3.5 0 0 1 11.5,10.5 M13.5,3.5 A6.5,6.5 0 0 1 13.5,12.5</Geometry>
+    <Geometry x:Key="VolumeLowIcon">M2,6 H5 L9,2.5 V13.5 L5,10 H2 Z M11.5,5.5 A3.5,3.5 0 0 1 11.5,10.5</Geometry>
+    <Geometry x:Key="VolumeMuteIcon">M2,6 H5 L9,2.5 V13.5 L5,10 H2 Z M11.5,5.5 L15,10.5 M15,5.5 L11.5,10.5</Geometry>
+    <Geometry x:Key="FolderIcon">M1.5,3.5 H6 L7.5,5.5 H14.5 V13.5 H1.5 Z</Geometry>
+    <Geometry x:Key="OpenFolderIcon">M3,5 V3 H13 V13 H11 M1.5,6.5 H11.5 V14.5 H1.5 Z M7,10.5 L9.5,8 M7,8 H9.5 V10.5</Geometry>
+    <Geometry x:Key="PinIcon">M5.5,2.5 H10.5 L9.5,7 L12,9.5 V10.5 H8.5 V14.5 L8,15 L7.5,14.5 V10.5 H4 V9.5 L6.5,7 Z</Geometry>
+    <Geometry x:Key="SearchIcon">M7,2.5 A4.5,4.5 0 1 1 6.99,2.5 M10.5,10.5 L14,14</Geometry>
     <Style TargetType="ToolTip">
         <Setter Property="Foreground" Value="{StaticResource Ink}"/>
         <Setter Property="Background" Value="{StaticResource ControlFill}"/>

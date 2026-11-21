@@ -50,6 +50,7 @@
                     <Button x:Name="CompactContent" Width="176" Height="38" Style="{StaticResource PillButton}"
                             HorizontalAlignment="Center" VerticalAlignment="Top" Focusable="False"
                             AutomationProperties.Name="Open island" Visibility="Collapsed">
+                        <Grid Height="38">
                         <Grid Margin="12,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="27"/>
@@ -72,6 +73,12 @@
                         <local:PlaybackBars x:Name="CompactPlayback" Grid.Column="2" Width="16" Height="14"
                                             HorizontalAlignment="Right" VerticalAlignment="Center" Visibility="Collapsed"/>
                         </Grid>
+                        <Border x:Name="CompactTimerTrack" VerticalAlignment="Bottom" Margin="18,0,18,2" Height="2"
+                                CornerRadius="1" Background="{StaticResource TrackFill}" Visibility="Collapsed" IsHitTestVisible="False">
+                            <Border x:Name="CompactTimerFill" HorizontalAlignment="Left" Height="2" CornerRadius="1"
+                                    Background="{StaticResource Accent}" Width="0"/>
+                        </Border>
+                        </Grid>
                     </Button>
 
                     <Border x:Name="TelemetryContent" HorizontalAlignment="Center" VerticalAlignment="Top"
@@ -88,6 +95,7 @@
                                 <ColumnDefinition x:Name="CpuColumn" Width="1.4*"/>
                                 <ColumnDefinition x:Name="GpuColumn" Width="1.4*"/>
                                 <ColumnDefinition x:Name="RamColumn" Width=".95*"/>
+                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition x:Name="MusicColumn" Width="0"/>
@@ -131,12 +139,20 @@
                                     <Run x:Name="RamNumber" Text="—"/><Run x:Name="RamUnit" Foreground="{StaticResource Muted}" FontWeight="Normal"/>
                                 </TextBlock>
                             </StackPanel>
-                            <local:FrameGraph x:Name="Graph" Grid.Column="5" Width="78" Height="15" Margin="12,0,6,0"
+                            <StackPanel x:Name="ServerLatency" Grid.Column="5" Orientation="Horizontal"
+                                        Margin="8,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"
+                                        AutomationProperties.Name="Roblox server network round-trip time">
+                                <TextBlock Text="Server RTT" Style="{StaticResource MetricLabel}"/>
+                                <TextBlock x:Name="ServerLatencyValue" Style="{StaticResource MetricValue}" MinWidth="58" Text="">
+                                    <Run x:Name="ServerLatencyNumber" Text="—"/><Run x:Name="ServerLatencyUnit" Foreground="{StaticResource Muted}" FontWeight="Normal"/>
+                                </TextBlock>
+                            </StackPanel>
+                            <local:FrameGraph x:Name="Graph" Grid.Column="6" Width="78" Height="15" Margin="12,0,6,0"
                                               VerticalAlignment="Center" Visibility="Collapsed"
                                               AutomationProperties.Name="Recent frame times"/>
-                            <TextBlock x:Name="PreviewLabel" Grid.Column="6" Grid.RowSpan="2" Text="Preview" VerticalAlignment="Center"
+                            <TextBlock x:Name="PreviewLabel" Grid.Column="7" Grid.RowSpan="2" Text="Preview" VerticalAlignment="Center"
                                        Foreground="{StaticResource Muted}" Margin="10,0,2,0" Visibility="Collapsed"/>
-                            <Grid x:Name="GameTrack" Grid.Column="7" Grid.RowSpan="2" Width="154" HorizontalAlignment="Left"
+                            <Grid x:Name="GameTrack" Grid.Column="8" Grid.RowSpan="2" Width="154" HorizontalAlignment="Left"
                                   ClipToBounds="True" Opacity="0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="10"/>

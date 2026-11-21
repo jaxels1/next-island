@@ -9,9 +9,10 @@ namespace SapphireGameHud;
 
 public sealed class PlaybackBars : FrameworkElement
 {
-    private static readonly Brush Ink = CreateInk();
+    private static readonly Brush DefaultInk = CreateInk(Color.FromRgb(214, 219, 233));
     private readonly DispatcherTimer timer = new(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(40) };
     private readonly double[] bars = [.32, .32, .32, .32];
+    private Brush ink = DefaultInk;
     private long startedAt;
     private bool playing;
     public double Amplitude { get; set; } = .68;
@@ -27,6 +28,13 @@ public sealed class PlaybackBars : FrameworkElement
     private void PreferencesChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(SystemParameters.ClientAreaAnimation)) UpdateTimer();
+    }
+
+    internal void SetAccent(Color? color)
+    {
+        var next = color is { } value ? CreateInk(value) : DefaultInk;
+        ink = next;
+        InvalidateVisual();
     }
 
     internal void SetPlaying(bool value)
@@ -59,8 +67,9 @@ public sealed class PlaybackBars : FrameworkElement
         var time = (Environment.TickCount64 - startedAt) / 1000d;
         for (var i = 0; i < bars.Length; i++)
         {
-            var wave = .5 + .5 * Math.Sin(time * (8.5 + i * 1.6) + i * 1.7);
-            var target = playing ? .32 + Amplitude * wave : .32;
+            var wave = 0.5 + 0.34 * Math.Sin(time * (7.8 + i * 1.7) + i * 1.6)
+                + 0.16 * Math.Sin(time * (13.4 - i * 1.1) + i * 2.3);
+            var target = playing ? .32 + Amplitude * Math.Clamp(wave, 0, 1) : .32;
             bars[i] += (target - bars[i]) * .48;
         }
         InvalidateVisual();
@@ -73,14 +82,14 @@ public sealed class PlaybackBars : FrameworkElement
         {
             var height = Math.Max(2, ActualHeight * bars[i]);
             var x = (ActualWidth - 14) / 2 + i * 4;
-            drawing.DrawRoundedRectangle(Ink, null, new Rect(x, (ActualHeight - height) / 2, 2, height), 1, 1);
+            drawing.DrawRoundedRectangle(ink, null, new Rect(x, (ActualHeight - height) / 2, 2, height), 1, 1);
         }
     }
 
-    private static Brush CreateInk()
+    private static Brush CreateInk(Color color)
     {
-        var ink = new SolidColorBrush(Color.FromRgb(214, 219, 233));
-        ink.Freeze();
-        return ink;
+        var brush = new SolidColorBrush(color);
+        brush.Freeze();
+        return brush;
     }
 }

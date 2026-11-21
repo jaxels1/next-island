@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Added 2026-11-12 for the Windows island.
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
@@ -9,6 +10,7 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -21,21 +23,57 @@ public partial class IslandPanel : UserControl, IDisposable
 {
     private enum View { Music, Shelf, Clipboard, Timer, Settings }
 
-    private sealed record ShelfItem(string Path)
+    private sealed record ShelfItem(string Path, bool IsDirectory, string SizeLabel)
     {
         public string Label => System.IO.Path.GetFileName(System.IO.Path.TrimEndingDirectorySeparator(Path));
+
+        internal static ShelfItem FromPath(string path)
+        {
+            if (Directory.Exists(path)) return new(path, true, "Folder");
+            try
+            {
+                var length = new FileInfo(path).Length;
+                return new(path, false, FormatSize(length));
+            }
+            catch (IOException)
+            {
+                return new(path, false, "");
+            }
+        }
+
+        private static string FormatSize(long bytes) => bytes switch
+        {
+            < 1024 => $"{bytes} B",
+            < 1024 * 1024 => $"{bytes / 1024d:0.#} KB",
+            < 1024L * 1024 * 1024 => $"{bytes / (1024d * 1024):0.#} MB",
+            _ => $"{bytes / (1024d * 1024 * 1024):0.##} GB"
+        };
     }
 
-    private sealed record ClipboardEntry(string Text)
+    private sealed record ClipboardEntry(string Text, DateTimeOffset CapturedAt, bool Pinned = false)
     {
         public string Label => Text.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        public Visibility PinVisibility => Pinned ? Visibility.Visible : Visibility.Collapsed;
+        public string AgeLabel
+        {
+            get
+            {
+                var elapsed = DateTimeOffset.UtcNow - CapturedAt;
+                if (elapsed.TotalSeconds < 60) return "now";
+                if (elapsed.TotalMinutes < 60) return $"{(int)elapsed.TotalMinutes}m";
+                if (elapsed.TotalHours < 24) return $"{(int)elapsed.TotalHours}h";
+                return $"{(int)elapsed.TotalDays}d";
+            }
+        }
     }
 
     private readonly ObservableCollection<ShelfItem> shelf = [];
-    private readonly ObservableCollection<ClipboardEntry> clipboard = [];
+    private readonly List<ClipboardEntry> clipboard = [];
+    private readonly ObservableCollection<ClipboardEntry> visibleClipboard = [];
     private readonly DispatcherTimer seekDebounce = new() { Interval = TimeSpan.FromMilliseconds(150) };
     private readonly Action<bool> listenToClipboard;
     private readonly WindowsMedia media;
+    private readonly SystemAudio audio = new();
     private View view;
     private View previousView;
     private bool loadingSettings;
@@ -45,7 +83,9 @@ public partial class IslandPanel : UserControl, IDisposable
     private long seekIntentUntil;
     private readonly ScaleTransform artworkScale = new(1, 1);
     private bool updatingSeek;
+    private bool updatingVolume;
     private bool seeking;
+    private bool showRemainingTime;
     private Point? fileDragOrigin;
     private bool fileDragActive;
     private bool pickerOpen;
@@ -55,6 +95,8 @@ public partial class IslandPanel : UserControl, IDisposable
     private bool timerCompleted;
     private long copyFeedbackUntil;
     private int mediaCommandVersion;
+    private bool audioAvailable;
+    private bool audioMuted;
 
     internal IslandPanel(Action<bool> listenToClipboard, Action<MediaReading, PlaybackChange> compactMedia)
     {
@@ -63,24 +105,35 @@ public partial class IslandPanel : UserControl, IDisposable
         AlbumArt.RenderTransformOrigin = new Point(.5, .5);
         AlbumArt.RenderTransform = artworkScale;
         Files.ItemsSource = shelf;
-        Clips.ItemsSource = clipboard;
-        Files.SelectionChanged += (_, _) => RemoveFile.IsEnabled = Files.SelectedItem is ShelfItem;
-        Clips.SelectionChanged += (_, _) => CopyClip.IsEnabled = Clips.SelectedItem is ClipboardEntry;
-        Loaded += (_, _) => UpdateSelection(false);
-        IsVisibleChanged += (_, _) => { if (!IsVisible) ViewTransitionLayer.Children.Clear(); };
+        Clips.ItemsSource = visibleClipboard;
+        Files.SelectionChanged += (_, _) => UpdateShelfButtons();
+        Clips.SelectionChanged += (_, _) => UpdateClipboardButtons();
+        Loaded += (_, _) =>
+        {
+            UpdateSelection(false);
+            SyncVolume();
+        };
+        IsVisibleChanged += (_, _) =>
+        {
+            if (!IsVisible) ViewTransitionLayer.Children.Clear();
+            else SyncVolume();
+        };
         PanelBody.SizeChanged += (_, _) => ViewChanged?.Invoke();
         seekDebounce.Tick += async (_, _) =>
         {
             if (Mouse.LeftButton == MouseButtonState.Pressed && Seek.IsMouseCaptureWithin) return;
             await CommitSeek();
         };
+        SyncVolume();
         media = new WindowsMedia(value => _ = Dispatcher.InvokeAsync(() =>
         {
             compactMedia(value, UpdateMedia(value));
         }));
     }
 
-    internal bool HoldsOpen => fileDragActive || pickerOpen || Seek.IsMouseCaptureWithin
+    internal Color CurrentAccent { get; private set; } = ArtworkPalette.DefaultAccent;
+
+    internal bool HoldsOpen => fileDragActive || pickerOpen || Seek.IsMouseCaptureWithin || VolumeSlider.IsMouseCaptureWithin
         || DisplayChoice.IsDropDownOpen || GameRuleChoice.IsDropDownOpen;
 
     internal event Action? ViewChanged;
@@ -132,6 +185,51 @@ public partial class IslandPanel : UserControl, IDisposable
         SettingsOptions.MaxHeight = enabled ? 72 : 127;
         ViewHost.MinHeight = enabled ? 0 : 164;
         OnViewChanged();
+    }
+
+    protected override void OnPreviewKeyDown(KeyEventArgs e)
+    {
+        base.OnPreviewKeyDown(e);
+        if (e.Handled) return;
+
+        if (Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            View? destination = e.Key switch
+            {
+                Key.D1 when Navigation.Visibility == Visibility.Visible => View.Music,
+                Key.D2 when Navigation.Visibility == Visibility.Visible => View.Shelf,
+                Key.D3 when Navigation.Visibility == Visibility.Visible => View.Clipboard,
+                Key.D4 when Navigation.Visibility == Visibility.Visible => View.Timer,
+                _ => null
+            };
+            if (destination is { } target)
+            {
+                ShowView(target);
+                e.Handled = true;
+                return;
+            }
+            if (e.Key == Key.M && view == View.Music)
+            {
+                ToggleMute(this, e);
+                e.Handled = true;
+                return;
+            }
+        }
+
+        if (e.Key == Key.Space && Keyboard.Modifiers == ModifierKeys.None
+            && Keyboard.FocusedElement is not TextBox and not ButtonBase and not Slider)
+        {
+            if (view == View.Music && Toggle.IsEnabled)
+            {
+                ToggleTrack(this, e);
+                e.Handled = true;
+            }
+            else if (view == View.Timer)
+            {
+                ToggleTimer(this, e);
+                e.Handled = true;
+            }
+        }
     }
 
     private void NavigationSizeChanged(object sender, SizeChangedEventArgs e) => UpdateSelection(false);
@@ -308,13 +406,25 @@ public partial class IslandPanel : UserControl, IDisposable
         reading = value;
         receivedAt = now;
         TrackName.Text = value.HasTrack ? value.Title : "Nothing playing";
-        ArtistName.Text = value.HasTrack ? value.Artist : "Start playback in a media app.";
-        ArtistName.Visibility = string.IsNullOrEmpty(ArtistName.Text) ? Visibility.Collapsed : Visibility.Visible;
+        var sourceApp = ArtworkPalette.FormatSourceApp(value.Source);
+        var subtitle = !value.HasTrack
+            ? "Start playback in a media app."
+            : string.IsNullOrEmpty(value.Artist) ? sourceApp ?? ""
+            : sourceApp is not null ? $"{value.Artist} · {sourceApp}" : value.Artist;
+        ArtistName.Text = subtitle;
+        ArtistName.Visibility = string.IsNullOrEmpty(subtitle) ? Visibility.Collapsed : Visibility.Visible;
         TrackName.ToolTip = value.HasTrack ? value.Title : null;
-        ArtistName.ToolTip = string.IsNullOrEmpty(value.Artist) ? null : value.Artist;
+        ArtistName.ToolTip = string.IsNullOrEmpty(subtitle) ? null : subtitle;
         AlbumArt.Visibility = value.Artwork is null ? Visibility.Collapsed : Visibility.Visible;
         if ((AlbumArt.Fill as ImageBrush)?.ImageSource != value.Artwork)
+        {
             AlbumArt.Fill = value.Artwork is { } art ? new ImageBrush(art) { Stretch = Stretch.UniformToFill } : null;
+            UpdateAccent(value.Artwork);
+        }
+        else if (!value.HasTrack)
+        {
+            UpdateAccent(null);
+        }
         Previous.IsEnabled = value.CanPrevious;
         Toggle.IsEnabled = value.CanToggle;
         Next.IsEnabled = value.CanNext;
@@ -331,6 +441,23 @@ public partial class IslandPanel : UserControl, IDisposable
         if (view == View.Music && oldHeightState != (value.HasTrack, value.Duration > 0, ArtistName.Visibility, MusicStatus.Text))
             OnViewChanged();
         return change;
+    }
+
+    private void UpdateAccent(BitmapSource? artwork)
+    {
+        var accent = ArtworkPalette.ExtractAccent(artwork);
+        CurrentAccent = accent;
+        Resources["LiveAccent"] = CreateFrozenBrush(accent);
+        ArtGlowStop.Color = Color.FromArgb(0x46, accent.R, accent.G, accent.B);
+        var targetOpacity = artwork is null ? 0 : 1;
+        SetGlyphOpacity(ArtGlow, targetOpacity, IsVisible && SystemParameters.ClientAreaAnimation);
+    }
+
+    private static Brush CreateFrozenBrush(Color color)
+    {
+        var brush = new SolidColorBrush(color);
+        brush.Freeze();
+        return brush;
     }
 
     private void AnimatePlayback(PlaybackChange change)
@@ -370,7 +497,77 @@ public partial class IslandPanel : UserControl, IDisposable
         Seek.Value = position;
         updatingSeek = false;
         Elapsed.Text = reading.Duration > 0 ? FormatTime(position) : "";
-        Duration.Text = reading.Duration > 0 ? FormatTime(reading.Duration) : "";
+        Duration.Text = reading.Duration > 0
+            ? showRemainingTime ? "-" + FormatTime(Math.Max(0, reading.Duration - position)) : FormatTime(reading.Duration)
+            : "";
+    }
+
+    private void ToggleRemainingTime(object sender, MouseButtonEventArgs e)
+    {
+        showRemainingTime = !showRemainingTime;
+        UpdateProgress();
+        e.Handled = true;
+    }
+
+    internal void SyncVolume()
+    {
+        if (VolumeSlider.IsMouseCaptureWithin) return;
+        var current = audio.Read();
+        audioAvailable = current.HasValue;
+        VolumeRow.IsEnabled = audioAvailable;
+        VolumeRow.Opacity = audioAvailable ? 1 : 0.45;
+        if (current is var (level, muted))
+        {
+            audioMuted = muted;
+            ApplyVolumeUi(level, muted);
+        }
+        else
+        {
+            VolumePercent.Text = "—";
+        }
+    }
+
+    internal (double Level, bool Muted)? AdjustVolume(double delta)
+    {
+        var updated = audio.Adjust(delta);
+        if (updated is var (level, muted))
+        {
+            audioAvailable = true;
+            audioMuted = muted;
+            ApplyVolumeUi(level, muted);
+        }
+        return updated;
+    }
+
+    private void ApplyVolumeUi(double level, bool muted)
+    {
+        var percent = (int)Math.Round(level * 100);
+        updatingVolume = true;
+        VolumeSlider.Value = percent;
+        updatingVolume = false;
+        VolumePercent.Text = muted ? "Muted" : $"{percent}%";
+        var iconKey = muted || percent == 0 ? "VolumeMuteIcon"
+            : percent < 50 ? "VolumeLowIcon" : "VolumeHighIcon";
+        VolumeIcon.Data = (Geometry)FindResource(iconKey);
+        MuteButton.ToolTip = muted ? "Unmute (Ctrl+M)" : "Mute (Ctrl+M)";
+    }
+
+    private void ToggleMute(object sender, RoutedEventArgs e)
+    {
+        if (!audioAvailable) return;
+        var next = !audioMuted;
+        if (audio.SetMuted(next)) SyncVolume();
+    }
+
+    private void VolumeSliderChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (!IsInitialized || updatingVolume || !audioAvailable) return;
+        var level = Math.Clamp(e.NewValue / 100d, 0, 1);
+        if (audio.SetLevel(level))
+        {
+            audioMuted = false;
+            ApplyVolumeUi(level, false);
+        }
     }
 
     private async void PreviousTrack(object sender, RoutedEventArgs e) => await SendMediaCommand("previous");
@@ -415,6 +612,8 @@ public partial class IslandPanel : UserControl, IDisposable
     {
         if (!IsInitialized || updatingSeek || !Seek.IsEnabled) return;
         Elapsed.Text = FormatTime(e.NewValue);
+        if (showRemainingTime && reading.Duration > 0)
+            Duration.Text = "-" + FormatTime(Math.Max(0, reading.Duration - e.NewValue));
         seekDebounce.Stop();
         seekDebounce.Start();
     }
@@ -422,7 +621,11 @@ public partial class IslandPanel : UserControl, IDisposable
     internal void Tick()
     {
         UpdateTimer();
-        if (IsVisible) UpdateProgress();
+        if (IsVisible)
+        {
+            UpdateProgress();
+            if (view == View.Music) SyncVolume();
+        }
         if (copyFeedbackUntil != 0 && Environment.TickCount64 >= copyFeedbackUntil)
         {
             copyFeedbackUntil = 0;
@@ -449,7 +652,7 @@ public partial class IslandPanel : UserControl, IDisposable
         {
             if (shelf.Any(item => StringComparer.OrdinalIgnoreCase.Equals(item.Path, path))) continue;
             if (shelf.Count >= 32) { skipped = true; break; }
-            if (File.Exists(path) || Directory.Exists(path)) shelf.Add(new ShelfItem(path));
+            if (File.Exists(path) || Directory.Exists(path)) shelf.Add(ShelfItem.FromPath(path));
             else skipped = true;
         }
         RefreshShelf();
@@ -461,6 +664,15 @@ public partial class IslandPanel : UserControl, IDisposable
     {
         ShelfEmpty.Visibility = shelf.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         ShelfCount.Text = shelf.Count == 1 ? "1 file" : $"{shelf.Count} files";
+        UpdateShelfButtons();
+    }
+
+    private void UpdateShelfButtons()
+    {
+        var hasSelection = Files.SelectedItem is ShelfItem;
+        RevealFile.IsEnabled = hasSelection;
+        RemoveFile.IsEnabled = hasSelection;
+        ClearShelf.IsEnabled = shelf.Count > 0;
     }
 
     private void SetStatus(TextBlock target, string? message)
@@ -494,6 +706,30 @@ public partial class IslandPanel : UserControl, IDisposable
         RefreshShelf();
     }
 
+    private void ClearAllShelf(object sender, RoutedEventArgs e)
+    {
+        shelf.Clear();
+        SetStatus(ShelfStatus, null);
+        RefreshShelf();
+    }
+
+    private void RevealSelectedFile(object sender, RoutedEventArgs e)
+    {
+        if (Files.SelectedItem is not ShelfItem item) return;
+        if (!(File.Exists(item.Path) || Directory.Exists(item.Path)))
+        {
+            SetStatus(ShelfStatus, "File missing. Remove it and add it again.");
+            return;
+        }
+        try
+        {
+            var args = item.IsDirectory ? $"\"{item.Path}\"" : $"/select,\"{item.Path}\"";
+            Process.Start(new ProcessStartInfo("explorer.exe", args) { UseShellExecute = true });
+            SetStatus(ShelfStatus, null);
+        }
+        catch (System.ComponentModel.Win32Exception) { SetStatus(ShelfStatus, "Couldn’t open File Explorer."); }
+    }
+
     private void OpenSelectedFile(object sender, MouseButtonEventArgs e)
         => OpenSelectedFile();
 
@@ -501,6 +737,15 @@ public partial class IslandPanel : UserControl, IDisposable
     {
         if (e.Key == Key.Delete) RemoveSelectedFile(sender, e);
         else if (e.Key == Key.Enter) OpenSelectedFile();
+        else if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control && Files.SelectedItem is ShelfItem item)
+        {
+            try
+            {
+                Clipboard.SetText(item.Path);
+                SetStatus(ShelfStatus, "Path copied.");
+            }
+            catch (ExternalException) { SetStatus(ShelfStatus, "Clipboard busy. Try copying again."); }
+        }
         else return;
         e.Handled = true;
     }
@@ -545,9 +790,13 @@ public partial class IslandPanel : UserControl, IDisposable
         if (!IsInitialized) return;
         var enabled = ClipboardEnabled.IsChecked == true;
         listenToClipboard(enabled);
-        if (!enabled) clipboard.Clear();
+        if (!enabled)
+        {
+            clipboard.Clear();
+            ClipFilter.Text = "";
+        }
         SetStatus(ClipboardStatus, null);
-        UpdateClipboardEmpty();
+        RefreshClipboardView();
     }
 
     internal void RecordClipboard()
@@ -558,13 +807,67 @@ public partial class IslandPanel : UserControl, IDisposable
             if (!Clipboard.ContainsText()) return;
             var text = Clipboard.GetText();
             if (string.IsNullOrWhiteSpace(text) || text.Length > 32_768) return;
-            var duplicate = clipboard.FirstOrDefault(item => StringComparer.Ordinal.Equals(item.Text, text));
-            if (duplicate is not null) clipboard.Remove(duplicate);
-            clipboard.Insert(0, new ClipboardEntry(text));
-            if (clipboard.Count > 20) clipboard.RemoveAt(20);
-            UpdateClipboardEmpty();
+            var existingIndex = clipboard.FindIndex(item => StringComparer.Ordinal.Equals(item.Text, text));
+            var pinned = existingIndex >= 0 && clipboard[existingIndex].Pinned;
+            if (existingIndex >= 0) clipboard.RemoveAt(existingIndex);
+
+            var entry = new ClipboardEntry(text, DateTimeOffset.UtcNow, pinned);
+            var insertAt = pinned ? 0 : clipboard.TakeWhile(item => item.Pinned).Count();
+            clipboard.Insert(insertAt, entry);
+            if (clipboard.Count > 24)
+            {
+                var unpinned = clipboard.FindLastIndex(item => !item.Pinned);
+                clipboard.RemoveAt(unpinned >= 0 ? unpinned : clipboard.Count - 1);
+            }
+            RefreshClipboardView();
         }
         catch (ExternalException) { }
+    }
+
+    private void ClipFilterChanged(object sender, TextChangedEventArgs e)
+    {
+        ClipFilterHint.Visibility = string.IsNullOrEmpty(ClipFilter.Text) ? Visibility.Visible : Visibility.Collapsed;
+        RefreshClipboardView();
+    }
+
+    private void RefreshClipboardView()
+    {
+        var selectedText = (Clips.SelectedItem as ClipboardEntry)?.Text;
+        var query = ClipFilter.Text.Trim();
+        visibleClipboard.Clear();
+        foreach (var entry in clipboard.Where(item => string.IsNullOrEmpty(query)
+            || item.Text.Contains(query, StringComparison.OrdinalIgnoreCase)))
+        {
+            visibleClipboard.Add(entry);
+        }
+        if (selectedText is not null)
+            Clips.SelectedItem = visibleClipboard.FirstOrDefault(item => StringComparer.Ordinal.Equals(item.Text, selectedText));
+
+        ClipFilterBox.Visibility = clipboard.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        UpdateClipboardEmpty();
+        UpdateClipboardButtons();
+    }
+
+    private void UpdateClipboardButtons()
+    {
+        var selected = Clips.SelectedItem as ClipboardEntry;
+        CopyClip.IsEnabled = selected is not null;
+        PinClip.IsEnabled = selected is not null;
+        PinClip.Content = selected?.Pinned == true ? "Unpin" : "Pin";
+        ClearClips.IsEnabled = clipboard.Count > 0;
+    }
+
+    private void TogglePinClip(object sender, RoutedEventArgs e)
+    {
+        if (Clips.SelectedItem is not ClipboardEntry selected) return;
+        var index = clipboard.FindIndex(item => StringComparer.Ordinal.Equals(item.Text, selected.Text));
+        if (index < 0) return;
+        var updated = selected with { Pinned = !selected.Pinned };
+        clipboard.RemoveAt(index);
+        var insertAt = updated.Pinned ? 0 : clipboard.TakeWhile(item => item.Pinned).Count();
+        clipboard.Insert(insertAt, updated);
+        RefreshClipboardView();
+        Clips.SelectedItem = updated;
     }
 
     private void CopySelected(object sender, RoutedEventArgs e)
@@ -582,6 +885,14 @@ public partial class IslandPanel : UserControl, IDisposable
 
     private void CopyClipWithKeyboard(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Delete && Clips.SelectedItem is ClipboardEntry item)
+        {
+            clipboard.RemoveAll(entry => StringComparer.Ordinal.Equals(entry.Text, item.Text));
+            SetStatus(ClipboardStatus, null);
+            RefreshClipboardView();
+            e.Handled = true;
+            return;
+        }
         if (e.Key != Key.Enter && !(e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control)) return;
         CopySelected(sender, e);
         e.Handled = true;
@@ -589,15 +900,20 @@ public partial class IslandPanel : UserControl, IDisposable
 
     private void ClearClipboard(object sender, RoutedEventArgs e)
     {
-        clipboard.Clear();
+        var hasUnpinned = clipboard.Any(item => !item.Pinned);
+        if (hasUnpinned) clipboard.RemoveAll(item => !item.Pinned);
+        else clipboard.Clear();
+        if (clipboard.Count == 0) ClipFilter.Text = "";
         SetStatus(ClipboardStatus, null);
-        UpdateClipboardEmpty();
+        RefreshClipboardView();
     }
 
     private void UpdateClipboardEmpty()
     {
-        ClipboardEmpty.Text = ClipboardEnabled.IsChecked == true ? "Copy text to add it here." : "Turn on history to keep copied text here.";
-        ClipboardEmpty.Visibility = clipboard.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        ClipboardEmpty.Text = clipboard.Count > 0 && visibleClipboard.Count == 0
+            ? "No matching clips."
+            : ClipboardEnabled.IsChecked == true ? "Copy text to add it here." : "Turn on history to keep copied text here.";
+        ClipboardEmpty.Visibility = visibleClipboard.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         ClearClips.IsEnabled = clipboard.Count > 0;
     }
 
@@ -627,6 +943,22 @@ public partial class IslandPanel : UserControl, IDisposable
         UpdateTimer();
     }
 
+    private void AddTimerMinute(object sender, RoutedEventArgs e)
+    {
+        if (timerEndsAt != 0)
+        {
+            timerEndsAt += 60_000;
+            remaining = Math.Max(0, (timerEndsAt - Environment.TickCount64) / 1000d);
+        }
+        else
+        {
+            remaining += 60;
+        }
+        if (remaining > selectedDuration) selectedDuration = remaining;
+        timerCompleted = false;
+        UpdateTimer();
+    }
+
     private void ResetTimer(object sender, RoutedEventArgs e)
     {
         timerEndsAt = 0;
@@ -651,13 +983,16 @@ public partial class IslandPanel : UserControl, IDisposable
         var paused = timerEndsAt == 0 && !timerCompleted && remaining < selectedDuration;
         TimerButton.Content = timerEndsAt != 0 ? "Pause timer" : paused ? "Resume timer" : timerCompleted ? "Start again" : "Start timer";
         TimerState.Text = timerCompleted ? "Finished" : timerEndsAt != 0 ? "Counting down" : paused ? "Paused" : "Ready";
-        TimerProgress.Value = Math.Clamp(remaining / selectedDuration, 0, 1);
+        TimerProgress.Value = selectedDuration > 0 ? Math.Clamp(remaining / selectedDuration, 0, 1) : 0;
+        TimerAddMinute.IsEnabled = timerEndsAt != 0 || paused;
         TimerReset.IsEnabled = timerEndsAt != 0 || remaining < selectedDuration || timerCompleted;
         TimerMinutes.IsEnabled = timerEndsAt == 0;
     }
 
     internal string? CompactTimerText => timerCompleted ? "Time’s up"
         : timerEndsAt != 0 ? FormatTime(Math.Ceiling(remaining), true) : null;
+    internal double CompactTimerProgress => timerEndsAt != 0 && selectedDuration > 0
+        ? Math.Clamp(remaining / selectedDuration, 0, 1) : 0;
     internal bool TimerCompleted => timerCompleted;
 
     private static string FormatTime(double seconds, bool padMinutes = false)
@@ -672,5 +1007,6 @@ public partial class IslandPanel : UserControl, IDisposable
         ViewTransitionLayer.Children.Clear();
         seekDebounce.Stop();
         media.Dispose();
+        audio.Dispose();
     }
 }

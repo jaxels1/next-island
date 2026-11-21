@@ -13,7 +13,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>NextIsland</AssemblyName>
     <Product>Next Island</Product>
-    <Version>0.2.4</Version>
+    <Version>0.3.0</Version>
     <StartupObject>SapphireGameHud.App</StartupObject>
     <RootNamespace>SapphireGameHud</RootNamespace>
   </PropertyGroup>

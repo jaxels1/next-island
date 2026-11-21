@@ -6,6 +6,7 @@
         FontFamily="{StaticResource IslandFont}" KeyboardNavigation.TabNavigation="Cycle" Focusable="True">
     <!-- Added 2026-11-12 for the Windows island. -->
     <UserControl.Resources>
+        <SolidColorBrush x:Key="LiveAccent" Color="#C7D6F6"/>
         <Style TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource Ink}"/>
         </Style>
@@ -53,6 +54,11 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <Style x:Key="CompactAction" TargetType="Button" BasedOn="{StaticResource Action}">
+            <Setter Property="Padding" Value="9,5"/>
+            <Setter Property="MinHeight" Value="28"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
         <Style TargetType="ListBox">
             <Setter Property="Background" Value="{StaticResource Recessed}"/>
             <Setter Property="BorderThickness" Value="0"/>
@@ -93,15 +99,43 @@
             </Setter>
         </Style>
         <DataTemplate x:Key="TextRow">
-            <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" FontSize="13"/>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Ellipse Width="5" Height="5" Fill="{DynamicResource LiveAccent}" Margin="0,0,6,0" VerticalAlignment="Center"
+                         Visibility="{Binding PinVisibility}"/>
+                <TextBlock Grid.Column="1" Text="{Binding Label}" TextTrimming="CharacterEllipsis" FontSize="13" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="2" Text="{Binding AgeLabel}" Style="{StaticResource Quiet}" FontSize="11"
+                           Margin="8,0,0,0" VerticalAlignment="Center" Typography.NumeralAlignment="Tabular"/>
+            </Grid>
         </DataTemplate>
         <DataTemplate x:Key="FileRow">
             <Grid Margin="0,2">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="28"/><ColumnDefinition/></Grid.ColumnDefinitions>
-                <Path Width="14" Height="17" Stretch="Uniform" Stroke="{StaticResource Muted}" StrokeThickness="1.3"
-                      StrokeLineJoin="Round" Data="{StaticResource FileIcon}" VerticalAlignment="Center"/>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="26"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Path Width="14" Height="16" Stretch="Uniform" Stroke="{StaticResource Muted}" StrokeThickness="1.3"
+                      StrokeLineJoin="Round" VerticalAlignment="Center">
+                    <Path.Style>
+                        <Style TargetType="Path">
+                            <Setter Property="Data" Value="{StaticResource FileIcon}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsDirectory}" Value="True">
+                                    <Setter Property="Data" Value="{StaticResource FolderIcon}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Path.Style>
+                </Path>
                 <TextBlock Grid.Column="1" Text="{Binding Label}" FontSize="13" TextTrimming="CharacterEllipsis"
                            VerticalAlignment="Center" ToolTip="{Binding Path}"/>
+                <TextBlock Grid.Column="2" Text="{Binding SizeLabel}" Style="{StaticResource Quiet}" FontSize="11"
+                           Margin="8,0,0,0" VerticalAlignment="Center" Typography.NumeralAlignment="Tabular"/>
             </Grid>
         </DataTemplate>
         <Style TargetType="ScrollBar">
@@ -132,7 +166,7 @@
                                 <Track.DecreaseRepeatButton>
                                     <RepeatButton Command="Slider.DecreaseLarge" Focusable="False">
                                         <RepeatButton.Template><ControlTemplate TargetType="RepeatButton">
-                                            <Border Background="Transparent"><Border Height="3" Background="{StaticResource Accent}"
+                                            <Border Background="Transparent"><Border Height="3" Background="{DynamicResource LiveAccent}"
                                                     CornerRadius="1.5" VerticalAlignment="Center"/></Border>
                                         </ControlTemplate></RepeatButton.Template>
                                     </RepeatButton>
@@ -147,10 +181,50 @@
                                 <Track.Thumb>
                                     <Thumb Width="12" Height="22">
                                         <Thumb.Template><ControlTemplate TargetType="Thumb">
-                                            <Grid Background="Transparent"><Ellipse x:Name="SeekHandle" Width="8" Height="8" Fill="{StaticResource Accent}"/></Grid>
+                                            <Grid Background="Transparent"><Ellipse x:Name="SeekHandle" Width="8" Height="8" Fill="{DynamicResource LiveAccent}"/></Grid>
                                             <ControlTemplate.Triggers>
                                                 <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="SeekHandle" Property="Width" Value="12"/><Setter TargetName="SeekHandle" Property="Height" Value="12"/></Trigger>
                                                 <Trigger Property="IsDragging" Value="True"><Setter TargetName="SeekHandle" Property="Width" Value="12"/><Setter TargetName="SeekHandle" Property="Height" Value="12"/></Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate></Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="VolumeTrack" TargetType="Slider">
+            <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocus}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid Height="20">
+                            <Border Height="3" CornerRadius="1.5" Background="{StaticResource TrackFill}" VerticalAlignment="Center"/>
+                            <Track x:Name="PART_Track" Height="20">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="Slider.DecreaseLarge" Focusable="False">
+                                        <RepeatButton.Template><ControlTemplate TargetType="RepeatButton">
+                                            <Border Background="Transparent"><Border Height="3" Background="{StaticResource Muted}"
+                                                    CornerRadius="1.5" VerticalAlignment="Center"/></Border>
+                                        </ControlTemplate></RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="Slider.IncreaseLarge" Focusable="False">
+                                        <RepeatButton.Template><ControlTemplate TargetType="RepeatButton">
+                                            <Border Background="Transparent"/>
+                                        </ControlTemplate></RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Width="10" Height="20">
+                                        <Thumb.Template><ControlTemplate TargetType="Thumb">
+                                            <Grid Background="Transparent"><Ellipse x:Name="VolumeHandle" Width="7" Height="7" Fill="{StaticResource Ink}"/></Grid>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="VolumeHandle" Property="Width" Value="10"/><Setter TargetName="VolumeHandle" Property="Height" Value="10"/></Trigger>
+                                                <Trigger Property="IsDragging" Value="True"><Setter TargetName="VolumeHandle" Property="Width" Value="10"/><Setter TargetName="VolumeHandle" Property="Height" Value="10"/></Trigger>
                                             </ControlTemplate.Triggers>
                                         </ControlTemplate></Thumb.Template>
                                     </Thumb>
@@ -172,7 +246,7 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="RadioButton">
                         <Grid Background="Transparent">
-                            <Border x:Name="Choice" CornerRadius="8" Background="Transparent" Padding="7,5"
+                            <Border x:Name="Choice" CornerRadius="8" Background="Transparent" Padding="6,5"
                                     IsHitTestVisible="False">
                                 <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center"/>
                             </Border>
@@ -283,7 +357,7 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="CheckBox">
-                        <DockPanel Background="Transparent" MinHeight="36" LastChildFill="True">
+                        <DockPanel Background="Transparent" MinHeight="32" LastChildFill="True">
                             <Border x:Name="SwitchTrack" DockPanel.Dock="Right" Width="34" Height="20" CornerRadius="10" Margin="12,0,0,0"
                                     VerticalAlignment="Center" Background="{StaticResource TrackFill}">
                                 <Ellipse x:Name="SwitchThumb" Width="16" Height="16" Margin="2"
@@ -408,6 +482,15 @@
         <StackPanel x:Name="MusicView" VerticalAlignment="Center">
             <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="88"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                <Ellipse x:Name="ArtGlow" Grid.ColumnSpan="2" Width="140" Height="140" Margin="-34,-34,0,-34"
+                         HorizontalAlignment="Left" VerticalAlignment="Center" IsHitTestVisible="False" Opacity="0">
+                    <Ellipse.Fill>
+                        <RadialGradientBrush>
+                            <GradientStop x:Name="ArtGlowStop" Color="#C7D6F6" Offset="0"/>
+                            <GradientStop Color="#00C7D6F6" Offset="1"/>
+                        </RadialGradientBrush>
+                    </Ellipse.Fill>
+                </Ellipse>
                 <Border x:Name="ArtTile" Background="{StaticResource Recessed}" Width="72" Height="72" HorizontalAlignment="Left"
                         VerticalAlignment="Center" CornerRadius="{StaticResource ArtworkRadius}" RenderTransformOrigin=".5,.5">
                     <Grid>
@@ -424,7 +507,7 @@
                                Style="{StaticResource Quiet}" TextTrimming="CharacterEllipsis" Margin="0,4,0,0"/>
                 </StackPanel>
             </Grid>
-            <StackPanel x:Name="Transport" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,12,0,0" Visibility="Collapsed">
+            <StackPanel x:Name="Transport" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,6,0,0" Visibility="Collapsed">
                 <Button x:Name="Previous" Style="{StaticResource TransportButton}" Click="PreviousTrack" ToolTip="Previous track"
                         AutomationProperties.Name="Previous track" IsEnabled="False">
                     <Path Style="{StaticResource PlaybackIcon}" Data="{StaticResource PreviousSolid}"/>
@@ -441,7 +524,7 @@
                     <Path Style="{StaticResource PlaybackIcon}" Data="{StaticResource NextSolid}"/>
                 </Button>
             </StackPanel>
-            <Grid x:Name="Timeline" Margin="0,6,0,0" Visibility="Collapsed">
+            <Grid x:Name="Timeline" Margin="0,2,0,0" Visibility="Collapsed">
                 <Grid.RowDefinitions><RowDefinition Height="22"/><RowDefinition Height="18"/></Grid.RowDefinitions>
                 <Slider x:Name="Seek" Minimum="0" Maximum="1" VerticalAlignment="Center"
                         Style="{StaticResource SeekTrack}" IsEnabled="False" IsMoveToPointEnabled="True"
@@ -450,9 +533,29 @@
                 <TextBlock x:Name="Elapsed" Grid.Row="1" Style="{StaticResource Quiet}" FontSize="11"
                            Typography.NumeralAlignment="Tabular"/>
                 <TextBlock x:Name="Duration" Grid.Row="1" Style="{StaticResource Quiet}" FontSize="11" HorizontalAlignment="Right"
-                           Typography.NumeralAlignment="Tabular"/>
+                           Typography.NumeralAlignment="Tabular" Cursor="Hand" Background="Transparent"
+                           MouseLeftButtonUp="ToggleRemainingTime" ToolTip="Click to toggle remaining time"/>
             </Grid>
-            <TextBlock x:Name="MusicStatus" Margin="0,8,0,0" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite">
+            <Grid x:Name="VolumeRow" Margin="0,2,0,0" Height="20">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="26"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="34"/>
+                </Grid.ColumnDefinitions>
+                <Button x:Name="MuteButton" Width="24" Height="20" Padding="0" Background="Transparent"
+                        Style="{StaticResource Action}" MinHeight="20" Click="ToggleMute"
+                        ToolTip="Mute (Ctrl+M)" AutomationProperties.Name="Mute">
+                    <Path x:Name="VolumeIcon" Width="13" Height="13" Stretch="Uniform"
+                          Stroke="{StaticResource Muted}" StrokeThickness="1.3" StrokeLineJoin="Round"
+                          StrokeStartLineCap="Round" StrokeEndLineCap="Round" Data="{StaticResource VolumeHighIcon}"/>
+                </Button>
+                <Slider x:Name="VolumeSlider" Grid.Column="1" Minimum="0" Maximum="100" SmallChange="2" LargeChange="10"
+                        IsMoveToPointEnabled="True" VerticalAlignment="Center" Style="{StaticResource VolumeTrack}"
+                        ValueChanged="VolumeSliderChanged" AutomationProperties.Name="System volume"/>
+                <TextBlock x:Name="VolumePercent" Grid.Column="2" Style="{StaticResource Quiet}" FontSize="11"
+                           HorizontalAlignment="Right" VerticalAlignment="Center" Typography.NumeralAlignment="Tabular" Text="—"/>
+            </Grid>
+            <TextBlock x:Name="MusicStatus" Margin="0,6,0,0" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite">
                 <TextBlock.Style><Style TargetType="TextBlock" BasedOn="{StaticResource Quiet}">
                     <Style.Triggers><Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed"/></Trigger></Style.Triggers>
                 </Style></TextBlock.Style>
@@ -461,30 +564,33 @@
 
         <StackPanel x:Name="ShelfView" Visibility="Collapsed" AllowDrop="True" Drop="AddDroppedFiles"
                     DragOver="ShowDropEffect" DragLeave="LeaveDropTarget" Background="Transparent">
-            <Grid Margin="0,0,0,10">
+            <Grid Margin="0,0,0,8">
                 <TextBlock Text="File shelf" FontSize="16" FontWeight="SemiBold"/>
                 <TextBlock x:Name="ShelfCount" Text="0 files" Style="{StaticResource Quiet}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
             </Grid>
             <Border x:Name="DropSurface" Background="{StaticResource Recessed}" CornerRadius="12" BorderBrush="Transparent" BorderThickness="1">
-                <Grid Height="94">
+                <Grid Height="90">
                     <ListBox x:Name="Files" Background="Transparent" ItemTemplate="{StaticResource FileRow}" AutomationProperties.Name="File shelf"
                              PreviewMouseLeftButtonDown="StartFileDrag" PreviewMouseMove="DragFile"
                              MouseDoubleClick="OpenSelectedFile" KeyDown="OpenSelectedFileWithKeyboard"/>
                     <StackPanel x:Name="ShelfEmpty" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
-                        <Path Width="22" Height="22" Margin="0,0,0,8" Stretch="Uniform" Stroke="{StaticResource Muted}" StrokeThickness="1.2" StrokeLineJoin="Round" Data="{StaticResource ShelfIcon}"/>
+                        <Path Width="22" Height="22" Margin="0,0,0,6" Stretch="Uniform" Stroke="{StaticResource Muted}" StrokeThickness="1.2" StrokeLineJoin="Round" Data="{StaticResource ShelfIcon}"/>
                         <TextBlock Text="Drop files here" FontSize="13" HorizontalAlignment="Center"/>
                         <TextBlock Text="Drag them out when you need them." Style="{StaticResource Quiet}" Margin="0,3,0,0"/>
                     </StackPanel>
                 </Grid>
             </Border>
-            <Grid Margin="0,10,0,0">
+            <Grid Margin="0,8,0,0">
                 <StackPanel Orientation="Horizontal">
-                    <Button x:Name="AddFile" Style="{StaticResource Action}" Content="Add files" Click="AddFiles"/>
-                    <Button x:Name="RemoveFile" Style="{StaticResource Action}" Background="Transparent" Content="Remove" Click="RemoveSelectedFile" Margin="6,0,0,0" IsEnabled="False"
+                    <Button x:Name="AddFile" Style="{StaticResource CompactAction}" Content="Add files" Click="AddFiles"/>
+                    <Button x:Name="RevealFile" Style="{StaticResource CompactAction}" Background="Transparent" Content="Reveal" Click="RevealSelectedFile" Margin="4,0,0,0" IsEnabled="False"
+                            ToolTip="Show in File Explorer"/>
+                    <Button x:Name="RemoveFile" Style="{StaticResource CompactAction}" Background="Transparent" Content="Remove" Click="RemoveSelectedFile" Margin="4,0,0,0" IsEnabled="False"
                             ToolTip="Remove from shelf (Delete). The original file stays where it is."/>
+                    <Button x:Name="ClearShelf" Style="{StaticResource CompactAction}" Background="Transparent" Content="Clear" Click="ClearAllShelf" Margin="4,0,0,0" IsEnabled="False"/>
                 </StackPanel>
             </Grid>
-            <TextBlock x:Name="ShelfStatus" Style="{StaticResource Quiet}" TextWrapping="Wrap" Visibility="Collapsed" Margin="0,8,0,0" AutomationProperties.LiveSetting="Polite"/>
+            <TextBlock x:Name="ShelfStatus" Style="{StaticResource Quiet}" TextWrapping="Wrap" Visibility="Collapsed" Margin="0,6,0,0" AutomationProperties.LiveSetting="Polite"/>
         </StackPanel>
 
         <StackPanel x:Name="ClipboardView" Visibility="Collapsed">
@@ -492,18 +598,36 @@
                       AutomationProperties.Name="Enable clipboard history">
                 <TextBlock Text="Clipboard history" FontSize="14" FontWeight="SemiBold"/>
             </CheckBox>
-            <TextBlock Text="Stored only until Next Island closes." Style="{StaticResource Quiet}" Margin="0,0,0,10"/>
-            <Grid Height="78">
+            <TextBlock Text="Stored only until Next Island closes." Style="{StaticResource Quiet}" Margin="0,0,0,6"/>
+            <Border x:Name="ClipFilterBox" Background="{StaticResource Recessed}" CornerRadius="8" Height="22" Padding="7,0" Margin="0,0,0,5" Visibility="Collapsed">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="16"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Path Width="11" Height="11" Stretch="Uniform" Stroke="{StaticResource Muted}" StrokeThickness="1.3"
+                          StrokeStartLineCap="Round" StrokeEndLineCap="Round" VerticalAlignment="Center" HorizontalAlignment="Left"
+                          Data="{StaticResource SearchIcon}"/>
+                    <TextBox x:Name="ClipFilter" Grid.Column="1" Background="Transparent" BorderThickness="0"
+                             Foreground="{StaticResource Ink}" CaretBrush="{StaticResource Ink}" FontSize="12"
+                             VerticalContentAlignment="Center" Padding="0" TextChanged="ClipFilterChanged"
+                             AutomationProperties.Name="Filter clipboard history"/>
+                    <TextBlock x:Name="ClipFilterHint" Grid.Column="1" Text="Filter clips…" Style="{StaticResource Quiet}"
+                               FontSize="11" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                </Grid>
+            </Border>
+            <Grid Height="62">
                 <ListBox x:Name="Clips" ItemTemplate="{StaticResource TextRow}" AutomationProperties.Name="Copied text"
                          KeyDown="CopyClipWithKeyboard" MouseDoubleClick="CopySelected"/>
                 <TextBlock x:Name="ClipboardEmpty" Text="Turn on history to keep copied text here." Style="{StaticResource Quiet}"
                            TextWrapping="Wrap" Margin="16,0" TextAlignment="Center" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"/>
             </Grid>
-            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                <Button x:Name="CopyClip" Style="{StaticResource Action}" Content="Copy" Click="CopySelected" MinWidth="64" IsEnabled="False" ToolTip="Copy selected text (Ctrl+C)"/>
-                <Button x:Name="ClearClips" Style="{StaticResource Action}" Background="Transparent" Content="Clear history" Click="ClearClipboard" Margin="6,0,0,0" IsEnabled="False"/>
+            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                <Button x:Name="CopyClip" Style="{StaticResource CompactAction}" Content="Copy" Click="CopySelected" MinWidth="58" IsEnabled="False" ToolTip="Copy selected text (Ctrl+C)"/>
+                <Button x:Name="PinClip" Style="{StaticResource CompactAction}" Background="Transparent" Content="Pin" Click="TogglePinClip" Margin="4,0,0,0" IsEnabled="False"/>
+                <Button x:Name="ClearClips" Style="{StaticResource CompactAction}" Background="Transparent" Content="Clear history" Click="ClearClipboard" Margin="4,0,0,0" IsEnabled="False"/>
             </StackPanel>
-            <TextBlock x:Name="ClipboardStatus" Style="{StaticResource Quiet}" Visibility="Collapsed" TextWrapping="Wrap" Margin="0,8,0,0" AutomationProperties.LiveSetting="Polite"/>
+            <TextBlock x:Name="ClipboardStatus" Style="{StaticResource Quiet}" Visibility="Collapsed" TextWrapping="Wrap" Margin="0,5,0,0" AutomationProperties.LiveSetting="Polite"/>
         </StackPanel>
 
         <StackPanel x:Name="TimerView" Visibility="Collapsed" VerticalAlignment="Center">
@@ -513,13 +637,16 @@
             </Grid>
             <ProgressBar x:Name="TimerProgress" Height="3" Minimum="0" Maximum="1" Value="1" Margin="0,10,0,14"
                          Style="{StaticResource TimerProgressStyle}" AutomationProperties.Name="Time remaining"/>
-            <UniformGrid x:Name="TimerMinutes" Columns="3" Margin="-3,0,0,14" AutomationProperties.Name="Timer duration">
-                <RadioButton Style="{StaticResource DurationChoice}" Content="5 min" Tag="5" GroupName="Duration" Checked="TimerDurationChanged" HorizontalContentAlignment="Center"/>
-                <RadioButton Style="{StaticResource DurationChoice}" Content="25 min" Tag="25" GroupName="Duration" IsChecked="True" Checked="TimerDurationChanged" HorizontalContentAlignment="Center"/>
-                <RadioButton Style="{StaticResource DurationChoice}" Content="60 min" Tag="60" GroupName="Duration" Checked="TimerDurationChanged" HorizontalContentAlignment="Center"/>
+            <UniformGrid x:Name="TimerMinutes" Columns="5" Margin="-3,0,0,14" AutomationProperties.Name="Timer duration">
+                <RadioButton Style="{StaticResource DurationChoice}" Content="1m" Tag="1" GroupName="Duration" Checked="TimerDurationChanged" HorizontalContentAlignment="Center"/>
+                <RadioButton Style="{StaticResource DurationChoice}" Content="5m" Tag="5" GroupName="Duration" Checked="TimerDurationChanged" HorizontalContentAlignment="Center"/>
+                <RadioButton Style="{StaticResource DurationChoice}" Content="15m" Tag="15" GroupName="Duration" Checked="TimerDurationChanged" HorizontalContentAlignment="Center"/>
+                <RadioButton Style="{StaticResource DurationChoice}" Content="25m" Tag="25" GroupName="Duration" IsChecked="True" Checked="TimerDurationChanged" HorizontalContentAlignment="Center"/>
+                <RadioButton Style="{StaticResource DurationChoice}" Content="60m" Tag="60" GroupName="Duration" Checked="TimerDurationChanged" HorizontalContentAlignment="Center"/>
             </UniformGrid>
             <StackPanel Orientation="Horizontal">
                 <Button x:Name="TimerButton" Style="{StaticResource Action}" Content="Start timer" Click="ToggleTimer" MinWidth="105"/>
+                <Button x:Name="TimerAddMinute" Style="{StaticResource Action}" Background="Transparent" Content="+1 min" Click="AddTimerMinute" Margin="6,0,0,0" IsEnabled="False"/>
                 <Button x:Name="TimerReset" Style="{StaticResource Action}" Background="Transparent" Content="Reset" Click="ResetTimer" Margin="6,0,0,0" IsEnabled="False"/>
             </StackPanel>
         </StackPanel>

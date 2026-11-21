@@ -8,15 +8,20 @@ namespace SapphireGameHud;
 
 public sealed class IslandSurface : FrameworkElement
 {
+    private static readonly Brush BodyFill = CreateBodyFill();
+    private static readonly Pen SpecularRim = CreateSpecularRim();
+    private static readonly Pen OuterShadow = CreateShadowPen(0x30, 3);
+    private static readonly Pen InnerShadow = CreateShadowPen(0x48, 1.5);
     private Rect body;
     private Geometry outline = Geometry.Empty;
     private double attachment;
     private double musicPocket;
     private double musicRowHeight;
     private double musicWidth;
-    private Pen? rim;
+    private Color? accentColor;
+    private Pen? pocketRim;
 
-    internal void SetShape(Rect bounds, Geometry shape, double neck, double music, double rowHeight, double pocketWidth)
+    internal void SetShape(Rect bounds, Geometry shape, double neck, double music, double rowHeight, double pocketWidth, Color? accent = null)
     {
         body = bounds;
         outline = shape;
@@ -24,6 +29,13 @@ public sealed class IslandSurface : FrameworkElement
         musicPocket = music;
         musicRowHeight = rowHeight;
         musicWidth = pocketWidth;
+        if (accentColor != accent)
+        {
+            accentColor = accent;
+            pocketRim = accent is { } tint
+                ? Freeze(new Pen(Freeze(new SolidColorBrush(Color.FromArgb(0x38, tint.R, tint.G, tint.B))), 0.75))
+                : null;
+        }
         InvalidateVisual();
     }
 
@@ -31,33 +43,37 @@ public sealed class IslandSurface : FrameworkElement
     {
         if (body.Width <= 1 || body.Height <= 1) return;
 
-        rim ??= Freeze(new Pen((Brush)FindResource("IslandRim"), 1));
-        var fill = (Brush)FindResource("IslandFill");
         drawing.PushTransform(new TranslateTransform(body.X, body.Y));
-        if (attachment <= 0.001 || body.Top <= 0.5)
+        var surface = outline;
+        if (attachment > 0.001 && body.Top > 0.5)
         {
-            drawing.DrawGeometry(fill, rim, outline);
-            DrawMusicPocket(drawing);
-            drawing.Pop();
-            return;
+            var center = body.Width / 2;
+            var stretch = Math.Clamp(body.Top / 12, 0, 1);
+            var root = Math.Min(body.Width * 0.30, (20 + 43 * attachment) * attachment);
+            var shoulder = Math.Min(body.Width * 0.32, root * 1.15 + 2);
+            var waist = root * (0.18 + 0.50 * (1 - stretch));
+            var neck = new StreamGeometry();
+            using (var path = neck.Open())
+            {
+                path.BeginFigure(new Point(center - root, -body.Top - 2), true, true);
+                path.BezierTo(new Point(center - waist, 1 - body.Top), new Point(center - waist, -body.Top * .24),
+                    new Point(center - shoulder, 3), true, true);
+                path.LineTo(new Point(center + shoulder, 3), true, false);
+                path.BezierTo(new Point(center + waist, -body.Top * .24), new Point(center + waist, 1 - body.Top),
+                    new Point(center + root, -body.Top - 2), true, true);
+            }
+            surface = new CombinedGeometry(GeometryCombineMode.Union, outline, neck);
         }
 
-        var center = body.Width / 2;
-        var stretch = Math.Clamp(body.Top / 12, 0, 1);
-        var root = Math.Min(body.Width * 0.30, (20 + 43 * attachment) * attachment);
-        var shoulder = Math.Min(body.Width * 0.32, root * 1.15 + 2);
-        var waist = root * (0.18 + 0.50 * (1 - stretch));
-        var neck = new StreamGeometry();
-        using (var path = neck.Open())
+        if (body.Height >= 6)
         {
-            path.BeginFigure(new Point(center - root, -body.Top - 2), true, true);
-            path.BezierTo(new Point(center - waist, 1 - body.Top), new Point(center - waist, -body.Top * .24),
-                new Point(center - shoulder, 3), true, true);
-            path.LineTo(new Point(center + shoulder, 3), true, false);
-            path.BezierTo(new Point(center + waist, -body.Top * .24), new Point(center + waist, 1 - body.Top),
-                new Point(center + root, -body.Top - 2), true, true);
+            drawing.PushTransform(new TranslateTransform(0, 1.5));
+            drawing.DrawGeometry(null, OuterShadow, surface);
+            drawing.DrawGeometry(null, InnerShadow, surface);
+            drawing.Pop();
         }
-        drawing.DrawGeometry(fill, rim, new CombinedGeometry(GeometryCombineMode.Union, outline, neck));
+
+        drawing.DrawGeometry(BodyFill, SpecularRim, surface);
         DrawMusicPocket(drawing);
         drawing.Pop();
     }
@@ -104,10 +120,33 @@ public sealed class IslandSurface : FrameworkElement
         var pocket = new Rect(body.Width - pocketWidth - 4, (row - pocketHeight) / 2, pocketWidth, pocketHeight);
         drawing.PushClip(outline);
         drawing.PushOpacity(Math.Min(1, musicPocket * 2));
-        drawing.DrawRoundedRectangle((Brush)FindResource("Recessed"), null, pocket, pocketHeight / 2, pocketHeight / 2);
+        drawing.DrawRoundedRectangle((Brush)FindResource("Recessed"), pocketRim, pocket, pocketHeight / 2, pocketHeight / 2);
         drawing.Pop();
         drawing.Pop();
     }
+
+    private static Brush CreateBodyFill()
+    {
+        var brush = new LinearGradientBrush(
+            Color.FromRgb(0x14, 0x16, 0x1C),
+            Color.FromRgb(0x0C, 0x0D, 0x11),
+            new Point(0, 0), new Point(0, 1));
+        return Freeze(brush);
+    }
+
+    private static Pen CreateSpecularRim()
+    {
+        var rimBrush = new LinearGradientBrush(new GradientStopCollection
+        {
+            new(Color.FromRgb(0x45, 0x49, 0x56), 0.0),
+            new(Color.FromRgb(0x26, 0x28, 0x30), 0.45),
+            new(Color.FromRgb(0x1C, 0x1E, 0x24), 1.0)
+        }, new Point(0, 0), new Point(0, 1));
+        return Freeze(new Pen(Freeze(rimBrush), 1));
+    }
+
+    private static Pen CreateShadowPen(byte alpha, double thickness) =>
+        Freeze(new Pen(Freeze(new SolidColorBrush(Color.FromArgb(alpha, 0, 0, 0))), thickness));
 
     private static T Freeze<T>(T item) where T : Freezable
     {

@@ -40,6 +40,7 @@ public partial class HudWindow : Window
 
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private readonly DispatcherTimer hoverTimer = new() { Interval = TimeSpan.FromMilliseconds(50) };
+    private readonly System.Drawing.Icon trayIcon = TrayIconFactory.Create();
     private readonly Forms.NotifyIcon tray;
     private readonly Forms.ToolStripMenuItem automatic;
     private readonly Forms.ToolStripMenuItem always;
@@ -70,6 +71,14 @@ public partial class HudWindow : Window
     private long leaveStarted;
     private long mediaPeekUntil;
     private string? playbackNotice;
+    private string? volumeNotice;
+    private long volumePeekUntil;
+    private Color? currentAccent;
+    private Brush? metricInk;
+    private Brush? metricAccent;
+    private Brush? metricGood;
+    private Brush? metricWarn;
+    private Brush? metricHot;
     private long timerPeekUntil;
     private bool timerCompleted;
     private IslandShape shape;
@@ -109,6 +118,10 @@ public partial class HudWindow : Window
     private string? presentMonPath;
     private PresentMonCapture? capture;
     private int capturePid;
+    private int latencyPid;
+    private long nextLatencyRead;
+    private RobloxServerLatency latencyReader = new();
+    private Task<double?>? latencyTask;
     private string? captureStatus;
     private TemperatureReading temperatures;
     private string? sensorSetupPath;
@@ -165,7 +178,7 @@ public partial class HudWindow : Window
         menu.Items.Add("Exit", null, (_, _) => Application.Current.Shutdown());
         tray = new Forms.NotifyIcon
         {
-            Icon = System.Drawing.SystemIcons.Application,
+            Icon = trayIcon,
             Text = Title,
             ContextMenuStrip = menu,
             Visible = true
@@ -180,6 +193,7 @@ public partial class HudWindow : Window
         timer.Tick += (_, _) => Tick();
         hoverTimer.Tick += (_, _) => UpdatePanelHover(Environment.TickCount64);
         CompactContent.Click += (_, _) => TogglePanel();
+        CompactContent.PreviewMouseWheel += OnCompactMouseWheel;
         PanelViewport.PreviewMouseDown += (_, _) =>
         {
             if (gameMusicOpen && !panelPinned) PinPanel(activate: true, focusControls: false);
@@ -255,7 +269,7 @@ public partial class HudWindow : Window
         mode = value;
         panelPinned = false;
         hoverStarted = leaveStarted = 0;
-        if (value == DisplayMode.Hidden) mediaPeekUntil = timerPeekUntil = 0;
+        if (value == DisplayMode.Hidden) mediaPeekUntil = timerPeekUntil = volumePeekUntil = 0;
         Tick();
         RefreshMenu();
     }
@@ -302,6 +316,7 @@ public partial class HudWindow : Window
             UpdateCapture(HudTarget.ProcessId);
             ShowFrames(capture?.Read());
         }
+        UpdateServerLatency(now);
 
         Position();
         RefreshCompact(now);
@@ -343,6 +358,10 @@ public partial class HudWindow : Window
         panel?.ResizeTo(panelWidth);
         var minimumSingleRow = games.LargeText ? 650 : 560;
         if (mode == DisplayMode.Preview) minimumSingleRow += 40;
+        var latencyWidth = games.LargeText ? 154 : 132;
+        var showLatency = (latencyPid != 0 || mode == DisplayMode.Preview) && usable >= minimumSingleRow + latencyWidth;
+        ServerLatency.Visibility = showLatency ? Visibility.Visible : Visibility.Collapsed;
+        if (showLatency) minimumSingleRow += latencyWidth;
         gameWidth = Math.Min(Math.Max(400, usable), Math.Max(minimumSingleRow, GameWidthFor(available)));
         musicSlotWidth = Math.Min(GameTrackWidth, Math.Max(0, usable - gameWidth));
         if (musicSlotWidth < 48) musicSlotWidth = 0;
@@ -385,10 +404,11 @@ public partial class HudWindow : Window
     private void RefreshCompact(long now)
     {
         var showMusic = ShowMusic(now);
+        var volText = now < volumePeekUntil ? volumeNotice : null;
         var timerText = now < timerPeekUntil ? "Time’s up"
             : now < mediaPeekUntil ? null : panel?.CompactTimerText;
         var notice = now < mediaPeekUntil ? playbackNotice : null;
-        var title = timerText ?? notice ?? (showMusic ? currentMedia.Title : "Next Island");
+        var title = volText ?? timerText ?? notice ?? (showMusic ? currentMedia.Title : "Next Island");
         if (CompactTitle.Text != title)
         {
             CompactTitle.Text = title;
@@ -403,15 +423,32 @@ public partial class HudWindow : Window
                 if (shape == IslandShape.Pill) StartMorph();
             }
         }
-        var playing = timerText is null && currentMedia.Playing;
-        CompactArt.Visibility = timerText is null && (showMusic && currentMedia.Artwork is not null || notice == "Playback ended" && CompactArt.Fill is not null)
+        var playing = volText is null && timerText is null && currentMedia.Playing;
+        CompactArt.Visibility = volText is null && timerText is null && (showMusic && currentMedia.Artwork is not null || notice == "Playback ended" && CompactArt.Fill is not null)
             ? Visibility.Visible : Visibility.Collapsed;
         CompactPlayback.Visibility = playing ? Visibility.Visible : Visibility.Collapsed;
-        if (timerText is null && (showMusic || notice == "Paused")) CompactPlayback.Visibility = Visibility.Visible;
+        if (volText is null && timerText is null && (showMusic || notice == "Paused")) CompactPlayback.Visibility = Visibility.Visible;
         CompactPlayback.SetPlaying(playing);
-        CompactClock.Visibility = CompactPlayback.Visibility == Visibility.Visible || notice is not null || now < timerPeekUntil
+        CompactClock.Visibility = CompactPlayback.Visibility == Visibility.Visible || notice is not null || volText is not null || now < timerPeekUntil
             ? Visibility.Collapsed : Visibility.Visible;
         CompactClock.Text = DateTime.Now.ToString("HH:mm", System.Globalization.CultureInfo.CurrentCulture);
+        var timerProgress = volText is null && timerText is not null && now >= timerPeekUntil
+            ? panel?.CompactTimerProgress ?? 0 : 0;
+        CompactTimerTrack.Visibility = timerProgress > 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (timerProgress > 0)
+            CompactTimerFill.Width = Math.Max(2, Math.Max(0, compactWidth - 36) * timerProgress);
+    }
+
+    private void OnCompactMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (panel is null) return;
+        var updated = panel.AdjustVolume(e.Delta > 0 ? 0.04 : -0.04);
+        if (updated is not var (level, muted)) return;
+        var now = Environment.TickCount64;
+        volumeNotice = muted ? "Muted" : $"Volume {(int)Math.Round(level * 100)}%";
+        volumePeekUntil = now + 1_500;
+        RefreshCompact(now);
+        e.Handled = true;
     }
 
     private void ReceiveMedia(MediaReading reading, PlaybackChange change)
@@ -456,6 +493,10 @@ public partial class HudWindow : Window
         if (!reading.HasTrack || reading.Stopped || reading.Playing) musicPausedAt = null;
         else musicPausedAt ??= now;
         currentMedia = reading;
+        var accent = reading.HasTrack ? ArtworkPalette.ExtractAccent(reading.Artwork) : (Color?)null;
+        currentAccent = accent;
+        CompactPlayback.SetAccent(accent);
+        GamePlayback.SetAccent(accent);
         if (reading.HasTrack)
         {
             GameTrackTitle.Text = reading.Title;
@@ -467,7 +508,11 @@ public partial class HudWindow : Window
         GamePlayback.SetPlaying(reading.Playing);
         if (IsGameShape && PlaybackMotion.ReplacesTrack(change) && reading.HasTrack)
             PlaybackMotion.Arrive(GameTrackTitle, PlaybackMotion.Offset(change, 6), 170);
-        if (IsGameShape) UpdateGameTrack();
+        if (IsGameShape)
+        {
+            UpdateGameTrack();
+            if (!animatingMorph) DrawMorph(width.Value, height.Value, emergence.Value);
+        }
         RefreshCompact(now);
         UpdatePanelHover(now);
         if (shape == IslandShape.Pill && change != PlaybackChange.None)
@@ -758,7 +803,7 @@ public partial class HudWindow : Window
         var musicWidth = musicSlotWidth * music;
         var outline = IslandSurface.CreateBody(bodyWidth, bodyHeight, radius, game, GameHeight, panel?.Width ?? PanelWidth);
         visibleOutline = outline;
-        Membrane.SetShape(visibleBounds, outline, neck, music * game, GameHeight, musicWidth);
+        Membrane.SetShape(visibleBounds, outline, neck, music * game, GameHeight, musicWidth, currentAccent);
 
         Island.Width = bodyWidth;
         Island.Height = bodyHeight;
@@ -910,8 +955,58 @@ public partial class HudWindow : Window
     private void ShowFrames(FrameReading? reading)
     {
         Fps.Text = Format(reading?.FramesPerSecond, "0", "");
+        Fps.Foreground = reading?.FramesPerSecond is not { } fps
+            ? ThemeBrush(ref metricAccent, "Accent")
+            : fps < 30 ? ThemeBrush(ref metricHot, "MetricHot")
+            : fps < 60 ? ThemeBrush(ref metricWarn, "MetricWarn")
+            : ThemeBrush(ref metricAccent, "Accent");
         SetMetric(FrameTimeNumber, FrameTimeUnit, reading?.Milliseconds, "0.0", " ms");
         if (games.ShowGraph) Graph.SetSamples(reading?.History ?? Array.Empty<double>());
+    }
+
+    private void UpdateServerLatency(long now)
+    {
+        var target = HudTarget;
+        var pid = live && GameDetection.IsRobloxPlayer(target) ? target.ProcessId : 0;
+        if (latencyPid != pid)
+        {
+            latencyPid = pid;
+            latencyReader = new();
+            latencyTask = null;
+            nextLatencyRead = 0;
+            SetLatencyReading(null);
+        }
+        if (mode == DisplayMode.Preview)
+        {
+            SetLatencyReading(43);
+            return;
+        }
+        if (pid == 0)
+        {
+            SetLatencyReading(null);
+            return;
+        }
+        if (latencyTask is { IsCompleted: true } sample)
+        {
+            SetLatencyReading(sample.IsCompletedSuccessfully ? sample.Result : null);
+            latencyTask = null;
+        }
+        if (latencyTask is null && now >= nextLatencyRead)
+        {
+            nextLatencyRead = now + 4_000;
+            var reader = latencyReader;
+            latencyTask = Task.Run(() => reader.Read(pid));
+        }
+    }
+
+    private void SetLatencyReading(double? latency)
+    {
+        SetMetric(ServerLatencyNumber, ServerLatencyUnit, latency, "0", " ms");
+        ServerLatencyNumber.Foreground = latency is not { } ms
+            ? ThemeBrush(ref metricInk, "Ink")
+            : ms >= 120 ? ThemeBrush(ref metricHot, "MetricHot")
+            : ms >= 60 ? ThemeBrush(ref metricWarn, "MetricWarn")
+            : ThemeBrush(ref metricGood, "MetricGood");
     }
 
     private void ShowUsage(UsageReading reading)
@@ -926,7 +1021,17 @@ public partial class HudWindow : Window
         temperatures = reading;
         SetMetric(CpuTempNumber, CpuTempUnit, reading.Cpu, "0", "°C");
         SetMetric(GpuTempNumber, GpuTempUnit, reading.Gpu, "0", "°C");
+        CpuTempNumber.Foreground = TemperatureBrush(reading.Cpu);
+        GpuTempNumber.Foreground = TemperatureBrush(reading.Gpu);
     }
+
+    private Brush TemperatureBrush(double? celsius) => celsius is not { } value
+        ? ThemeBrush(ref metricInk, "Ink")
+        : value >= 85 ? ThemeBrush(ref metricHot, "MetricHot")
+        : value >= 75 ? ThemeBrush(ref metricWarn, "MetricWarn")
+        : ThemeBrush(ref metricInk, "Ink");
+
+    private Brush ThemeBrush(ref Brush? cache, string key) => cache ??= (Brush)FindResource(key);
 
     private static void SetMetric(Run number, Run unit, double? value, string precision, string suffix)
     {
@@ -1078,6 +1183,7 @@ public partial class HudWindow : Window
             tray.Visible = false;
             tray.ContextMenuStrip?.Dispose();
             tray.Dispose();
+            trayIcon.Dispose();
             if (closingCaptures.Count != 0)
                 Task.WhenAll(closingCaptures).Wait(TimeSpan.FromSeconds(2));
         }

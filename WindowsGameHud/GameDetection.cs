@@ -99,7 +99,7 @@ internal sealed class GameDetection
         return ExecutablePath(window.Executable) is { } path && Detect(path);
     }
 
-    private static bool IsRobloxPlayer(ForegroundWindow window) =>
+    internal static bool IsRobloxPlayer(ForegroundWindow window) =>
         !NonGames.Contains(window.Name) &&
         ((window.PackageFamily is { } family && RobloxPackages.Contains(family))
             || string.Equals(window.Name, "RobloxPlayerBeta", StringComparison.OrdinalIgnoreCase)

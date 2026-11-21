@@ -8,11 +8,15 @@ Download **NextIsland-win-Setup.exe** from [Releases](https://github.com/jaxels1
 
 Installed copies check GitHub for stable updates at launch and every six hours. They download updates in the background and apply them when you exit Next Island. The tray menu also has **Check for updates**.
 
-- Hover at the top center, then click the pill for playback controls. Use the tabs to switch to the file shelf, clipboard history, or timer.
+- Hover at the top center, then click the pill for playback controls. Scroll over the compact pill to adjust system volume. Use the tabs (or **Ctrl+1–4**) to switch to the file shelf, clipboard history, or timer.
+- In Music, album artwork tints the seek bar, waveform, and subtle ambient glow, and clicking the track duration toggles remaining time. Use the volume bar or **Ctrl+M** to mute.
+- In Shelf, see file sizes, reveal items in File Explorer, press **Ctrl+C** to copy a path, or clear the shelf. In Clipboard history, filter clips live, pin entries to keep them across clears, and press **Delete** to remove an entry.
+- In Timer, pick 1–60 minute presets, add **+1 min** while running or paused, and follow the progress hairline on the compact pill.
 - Press **Ctrl+Alt+F9** to open the island. During a game, the same shortcut expands music controls beneath the live readings. Press **Esc** to close.
 - Hover briefly over the game HUD to reveal playback and settings. Move away to collapse it, or click a control to keep the panel open.
 - Press **Ctrl+Alt+F10** to pin or unpin the game HUD. If automatic detection misses your game, focus it and use **Game detection** from the tray.
 - Click the gear in the upper-right corner of the expanded island for settings, **Check for updates**, and **Quit app**.
+- In Roblox Player, **Server RTT** estimates latency to the connected server reported in Roblox's local log. It uses ICMP, so it can differ from Roblox's in-game ping. A dash means there is no reply or no server identified. The reading is omitted if the HUD is too narrow. Frame time spikes (>25 ms) and thermal or latency thresholds highlight automatically.
 
 Borderless fullscreen works best. In automatic mode, the HUD stays on a detected fullscreen game's screen when you use another monitor. Game detection uses local information and can miss some titles. FPS capture and temperature readings depend on Windows permissions, drivers, and hardware. A dash means a reading is unavailable. The installer is unsigned, so Windows may block it under Smart App Control.
 
