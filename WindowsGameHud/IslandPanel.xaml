@@ -443,6 +443,17 @@
         </Style>
     </UserControl.Resources>
 
+    <Grid>
+        <Ellipse x:Name="ArtGlow" Width="220" Height="210" Margin="-54,-5,0,0"
+                 HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False" Opacity="0">
+            <Ellipse.Fill>
+                <RadialGradientBrush>
+                    <GradientStop x:Name="ArtGlowStop0" Color="#34C7D6F6" Offset="0"/>
+                    <GradientStop x:Name="ArtGlowStop1" Color="#12C7D6F6" Offset="0.52"/>
+                    <GradientStop x:Name="ArtGlowStop2" Color="#00C7D6F6" Offset="1"/>
+                </RadialGradientBrush>
+            </Ellipse.Fill>
+        </Ellipse>
     <StackPanel x:Name="PanelBody" Margin="{StaticResource PanelInsets}">
         <Grid x:Name="NavigationHeader" Margin="0,0,0,16" Height="34">
             <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -482,15 +493,6 @@
         <StackPanel x:Name="MusicView" VerticalAlignment="Center">
             <Grid>
                 <Grid.ColumnDefinitions><ColumnDefinition Width="88"/><ColumnDefinition/></Grid.ColumnDefinitions>
-                <Ellipse x:Name="ArtGlow" Grid.ColumnSpan="2" Width="140" Height="140" Margin="-34,-34,0,-34"
-                         HorizontalAlignment="Left" VerticalAlignment="Center" IsHitTestVisible="False" Opacity="0">
-                    <Ellipse.Fill>
-                        <RadialGradientBrush>
-                            <GradientStop x:Name="ArtGlowStop" Color="#C7D6F6" Offset="0"/>
-                            <GradientStop Color="#00C7D6F6" Offset="1"/>
-                        </RadialGradientBrush>
-                    </Ellipse.Fill>
-                </Ellipse>
                 <Border x:Name="ArtTile" Background="{StaticResource Recessed}" Width="72" Height="72" HorizontalAlignment="Left"
                         VerticalAlignment="Center" CornerRadius="{StaticResource ArtworkRadius}" RenderTransformOrigin=".5,.5">
                     <Grid>
@@ -694,4 +696,5 @@
         <Canvas x:Name="ViewTransitionLayer" IsHitTestVisible="False" ClipToBounds="True"/>
         </Grid>
     </StackPanel>
+    </Grid>
 </UserControl>

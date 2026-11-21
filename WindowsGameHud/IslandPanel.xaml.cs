@@ -273,6 +273,7 @@ public partial class IslandPanel : UserControl, IDisposable
             View.Settings => SettingsView, _ => MusicView
         };
         PlaybackMotion.Arrive(incoming, direction * 4, 180, 0);
+        UpdateArtGlow(IsVisible && SystemParameters.ClientAreaAnimation);
         OnViewChanged();
         if (moveFocus) FocusControls();
     }
@@ -448,9 +449,16 @@ public partial class IslandPanel : UserControl, IDisposable
         var accent = ArtworkPalette.ExtractAccent(artwork);
         CurrentAccent = accent;
         Resources["LiveAccent"] = CreateFrozenBrush(accent);
-        ArtGlowStop.Color = Color.FromArgb(0x46, accent.R, accent.G, accent.B);
-        var targetOpacity = artwork is null ? 0 : 1;
-        SetGlyphOpacity(ArtGlow, targetOpacity, IsVisible && SystemParameters.ClientAreaAnimation);
+        ArtGlowStop0.Color = Color.FromArgb(0x34, accent.R, accent.G, accent.B);
+        ArtGlowStop1.Color = Color.FromArgb(0x12, accent.R, accent.G, accent.B);
+        ArtGlowStop2.Color = Color.FromArgb(0x00, accent.R, accent.G, accent.B);
+        UpdateArtGlow(IsVisible && SystemParameters.ClientAreaAnimation);
+    }
+
+    private void UpdateArtGlow(bool animate)
+    {
+        var targetOpacity = view == View.Music && reading.Artwork is not null ? 1 : 0;
+        SetGlyphOpacity(ArtGlow, targetOpacity, animate);
     }
 
     private static Brush CreateFrozenBrush(Color color)
