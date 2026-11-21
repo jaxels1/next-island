@@ -657,6 +657,8 @@
             <ScrollViewer x:Name="SettingsOptions" MaxHeight="127" VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled" Focusable="False">
                 <StackPanel Margin="0,0,8,0">
+                    <CheckBox x:Name="StartupSwitch" Style="{StaticResource ClipboardSwitch}" Content="Start with Windows"
+                              Click="ChangeStartupSetting"/>
                     <CheckBox x:Name="GraphSwitch" Style="{StaticResource ClipboardSwitch}" Content="Frame time graph"
                               Click="ChangeGraphSetting"/>
                     <CheckBox x:Name="LargeTextSwitch" Style="{StaticResource ClipboardSwitch}" Content="Larger HUD text"

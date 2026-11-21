@@ -251,6 +251,7 @@ internal static class Program
             height = (double)heightProperty.GetValue(panel)!;
             Settle(hud, width, height, 1);
             Require(settings.IsVisible && update.IsVisible && quit.IsVisible, "Gear opens settings with both app actions");
+            Require(Field<System.Windows.Controls.CheckBox>(panel, "StartupSwitch").IsVisible, "Settings includes Start with Windows");
             Require(displayMode.SelectedIndex == 0, "Settings shows the current automatic mode");
             var gearPosition = button.TransformToAncestor(panel).Transform(new Point());
             Require(gearPosition.X + button.ActualWidth <= width && width - gearPosition.X <= 54,

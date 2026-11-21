@@ -53,6 +53,7 @@ public partial class HudWindow : Window
     private readonly Forms.ToolStripMenuItem markGame;
     private readonly Forms.ToolStripMenuItem ignoreApp;
     private readonly Forms.ToolStripMenuItem resetRule;
+    private readonly Forms.ToolStripMenuItem startupOption;
     private readonly Forms.ToolStripMenuItem graphOption;
     private readonly Forms.ToolStripMenuItem largeTextOption;
     private readonly Forms.ToolStripMenuItem sensorSetup;
@@ -150,6 +151,11 @@ public partial class HudWindow : Window
         menu.Items.Add(gameRule);
 
         var settings = new Forms.ToolStripMenuItem("Settings");
+        startupOption = new Forms.ToolStripMenuItem("Start with Windows", null, (_, _) =>
+        {
+            ChangeStartup(!StartupRegistration.IsEnabled());
+            RefreshMenu();
+        });
         graphOption = new Forms.ToolStripMenuItem("Frame time graph", null, (_, _) =>
         {
             games.ShowGraph = !games.ShowGraph;
@@ -163,7 +169,7 @@ public partial class HudWindow : Window
         frameStatus = new Forms.ToolStripMenuItem { Enabled = false };
         temperatureStatus = new Forms.ToolStripMenuItem { Enabled = false };
         sensorSetup = new Forms.ToolStripMenuItem("Sensor setup…", null, (_, _) => OpenSensorInstaller());
-        settings.DropDownItems.AddRange([graphOption, largeTextOption, new Forms.ToolStripSeparator(), frameStatus, temperatureStatus,
+        settings.DropDownItems.AddRange([startupOption, graphOption, largeTextOption, new Forms.ToolStripSeparator(), frameStatus, temperatureStatus,
             new Forms.ToolStripMenuItem("Choose PresentMon…", null, (_, _) => ChoosePresentMon()), sensorSetup]);
         menu.Items.Add(settings);
         menu.Items.Add(new Forms.ToolStripSeparator());
@@ -1057,6 +1063,8 @@ public partial class HudWindow : Window
         markGame.Checked = appRule == true;
         ignoreApp.Checked = appRule == false;
         resetRule.Checked = appRule is null;
+        startupOption.Enabled = StartupRegistration.IsSupported;
+        startupOption.Checked = StartupRegistration.IsEnabled();
         graphOption.Checked = games.ShowGraph;
         largeTextOption.Checked = games.LargeText;
         sensorSetup.Enabled = sensorSetupPath is not null;
@@ -1100,8 +1108,20 @@ public partial class HudWindow : Window
         ruleTarget = mode == DisplayMode.Automatic && trackedGame.IsFullscreen ? trackedGame : lastApp;
         UpdateProviderLabels();
         var identity = GameDetection.IdentityFor(ruleTarget);
-        target.LoadSettings(mode, games.ShowGraph, games.LargeText, identity is null ? null : ruleTarget.Name,
+        target.LoadSettings(mode, StartupRegistration.IsSupported, StartupRegistration.IsEnabled(),
+            games.ShowGraph, games.LargeText, identity is null ? null : ruleTarget.Name,
             games.OverrideFor(identity), sensorSetupPath is not null, $"{frameStatus.Text}\n{temperatureStatus.Text}");
+    }
+
+    internal bool ChangeStartup(bool enabled)
+    {
+        if (!StartupRegistration.SetEnabled(enabled))
+        {
+            tray.ShowBalloonTip(3500, Title, "Startup preference could not be updated.", Forms.ToolTipIcon.Warning);
+            return false;
+        }
+        RefreshMenu();
+        return true;
     }
 
     internal void ChangeHudOption(bool isGraph, bool enabled)

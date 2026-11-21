@@ -321,12 +321,14 @@ public partial class IslandPanel : UserControl, IDisposable
         ShowView(View.Settings);
     }
 
-    internal void LoadSettings(HudWindow.DisplayMode mode, bool graph, bool largeText, string? appName,
-        bool? rule, bool sensorSetup, string providerStatus)
+    internal void LoadSettings(HudWindow.DisplayMode mode, bool startupSupported, bool startupEnabled,
+        bool graph, bool largeText, string? appName, bool? rule, bool sensorSetup, string providerStatus)
     {
         loadingSettings = true;
         try
         {
+            StartupSwitch.IsEnabled = startupSupported;
+            StartupSwitch.IsChecked = startupEnabled;
             GraphSwitch.IsChecked = graph;
             LargeTextSwitch.IsChecked = largeText;
             DisplayChoice.SelectedIndex = (int)mode;
@@ -337,6 +339,17 @@ public partial class IslandPanel : UserControl, IDisposable
             ProviderStatus.Text = providerStatus;
         }
         finally { loadingSettings = false; }
+    }
+
+    private void ChangeStartupSetting(object sender, RoutedEventArgs e)
+    {
+        var desired = StartupSwitch.IsChecked == true;
+        if (Hud?.ChangeStartup(desired) == false)
+        {
+            loadingSettings = true;
+            try { StartupSwitch.IsChecked = !desired; }
+            finally { loadingSettings = false; }
+        }
     }
 
     private void ChangeGraphSetting(object sender, RoutedEventArgs e) => Hud?.ChangeHudOption(true, GraphSwitch.IsChecked == true);
